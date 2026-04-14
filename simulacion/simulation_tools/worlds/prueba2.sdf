@@ -1,6 +1,6 @@
 ﻿<?xml version="1.0" encoding="UTF-8"?>
 <sdf version="1.9">
-  <world name='prueba1'>
+  <world name='prueba2'>
     <physics type="ode">
       <max_step_size>0.004</max_step_size>
       <real_time_factor>1.0</real_time_factor>
@@ -45,7 +45,7 @@
             <diffuse>0.8 0.8 0.8 1</diffuse>
             <pbr>
               <metal>
-                <albedo_map>/home/ruben/Carpeta_TFG_Provisional/src/TFG_inspeccion_plantas_termosolares/simulacion/simulation_tools/models/textures/parkour_scenario.jpg</albedo_map>
+                <albedo_map>/home/ruben/Carpeta_TFG_Provisional/src/TFG_inspeccion_plantas_termosolares/simulacion/simulation_tools/models/textures/cycling_scenario.jpg</albedo_map>
                 <roughness>0.9</roughness> 
                 <metalness>0.0</metalness> 
               </metal>

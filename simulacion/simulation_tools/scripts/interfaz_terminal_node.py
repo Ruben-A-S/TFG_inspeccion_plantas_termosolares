@@ -38,13 +38,16 @@ def menu_interactivo(nodo):
         print("2.  Configurar Paneles (Archivo CSV)")
         print("3.  Configurar Dron (Modelo y Posición)")
         print("-"*45)
-        print("4.   LANZAR SIMULACIÓN (GENERAR)")
-        print("5.   Detener Simulación (TERMINAR)")
-        print("6.  Apagar Todo y Salir (SALIR)")
+        print("4.  Poblar mundo")
+        print("5.  Vaciar mundo")
+        print("-"*45)
+        print("6.   LANZAR SIMULACIÓN (GENERAR)")
+        print("7.   Detener Simulación (TERMINAR)")
+        print("8.  Apagar Todo y Salir (SALIR)")
         print("="*45)
 
         # LA LECTURA POR TECLADO
-        opcion = input(" Elige una opción (1-6): ")
+        opcion = input(" Elige una opción (1-8): ")
 
         if opcion == '1':
             # Si el usuario solo pulsa Enter, coge el valor después del 'or'
@@ -70,20 +73,28 @@ def menu_interactivo(nodo):
                 print("   [ERROR] Las coordenadas deben ser números. Inténtelo de nuevo.")
 
         elif opcion == '4':
+            print("\n   >>  Enviando orden de POBLAR...")
+            nodo.publicar_accion("POBLAR")
+            
+        elif opcion == '5':
+            print("\n   >>  Enviando orden de VACIAR...")
+            nodo.publicar_accion("VACIAR")
+            
+        elif opcion == '6':
             print("\n   >>  Enviando orden de GENERAR...")
             nodo.publicar_accion("GENERAR")
 
-        elif opcion == '5':
+        elif opcion == '7':
             print("\n   >>  Enviando orden de TERMINAR...")
             nodo.publicar_accion("TERMINAR")
 
-        elif opcion == '6':
+        elif opcion == '8':
             print("\n   >>  Apagando el Orquestador y saliendo...")
             nodo.publicar_accion("SALIR")
             break # Rompe el bucle while y termina este script
         
         else:
-            print("   [!] Opción no válida. Escribe un número del 1 al 6.")
+            print("   [!] Opción no válida. Escribe un número del 1 al 8.")
 
 
 def main():

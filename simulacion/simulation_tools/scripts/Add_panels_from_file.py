@@ -8,8 +8,12 @@ def spawn_panel(world, nombre, x, y, z, pitch, yaw):
     print(f"Python ordenando crear a: {nombre}...")
     
     # Preparamos la lista de comandos (como si lo escribiéramos en la terminal con espacios)
+    
+    directorio_actual = os.path.dirname(os.path.abspath(__file__))
+    ruta_bash = os.path.join(directorio_actual, "add_panel.sh")
+    
     comando = [
-        "./add_panel.sh", 
+        ruta_bash, 
         str(world), 
         str(nombre), 
         str(x), 
@@ -31,53 +35,47 @@ def spawn_panel(world, nombre, x, y, z, pitch, yaw):
         print(f" Error al crear {nombre}:")
         print(resultado.stderr)
     
-def main():
-    # 1. Comprobamos que se le ha pasado un archivo al llamar al script
-    if len(sys.argv) != 3:
-        print("Error de sintaxis.")
-        print("Uso correcto: python3 Add_panels_from_file.py <world_name> <ruta_archivo.txt>")
-        sys.exit(1)
-    world = sys.argv[1]
-    archivo_txt = sys.argv[2]    
-    
-    # 2. Comprobamos que el mundo existe
-
-    
-    # 3. Comprobamos que el archivo existe realmente
+def inyectar_paneles(world, archivo_txt):
+    """
+    Lee un archivo de texto y genera los paneles en Gazebo.
+    Devuelve True si termina con éxito, False si hay un error.
+    """
     if not os.path.isfile(archivo_txt):
-        print(f"Error: No se encuentra el archivo '{archivo_txt}'.")
-        sys.exit(1)
+        print(f"[ERROR] No se encuentra el archivo de paneles: '{archivo_txt}'.")
+        return False
 
     print(f"Leyendo mapa de obstáculos desde: {archivo_txt}\n")
     
-    # 4. Abrimos el archivo y lo leemos línea a línea
     with open(archivo_txt, 'r') as file:
         lineas = file.readlines()
 
     for numero_linea, linea in enumerate(lineas, 1):
-        # Limpiamos espacios extra y saltos de línea
         linea_limpia = linea.strip()
 
-        # Ignoramos las líneas vacías y los comentarios (líneas que empiezan por #)
         if not linea_limpia or linea_limpia.startswith('#'):
             continue
 
-        # Separamos la línea por espacios. Asumimos el orden: nombre x y z pitch yaw
         parametros = linea_limpia.split()
 
-        # Comprobamos que la línea tiene exactamente los 6 datos que necesita Bash
         if len(parametros) != 6:
             print(f"Advertencia (Línea {numero_linea}): Se esperaban 6 parámetros, pero hay {len(parametros)}. Saltando línea...")
             continue
 
-        # Desempaquetamos las variables
         nombre, x, y, z, pitch, yaw = parametros
-    
-        spawn_panel(world, nombre, x, y, z, pitch, yaw);
-            
-if __name__ == "__main__":
-    main();
-    
-    
-    
+        spawn_panel(world, nombre, x, y, z, pitch, yaw)
+        
+    print("[ÉXITO] Inyección de paneles finalizada.")
+    return True
 
+# --- PROTECCIÓN PARA USO EN TERMINAL ---
+if __name__ == "__main__":
+    if len(sys.argv) != 3:
+        print("Error de sintaxis.")
+        print("Uso correcto: python3 Add_panels_from_file.py <world_name> <ruta_archivo.txt>")
+        sys.exit(1)
+        
+    world_arg = sys.argv[1]
+    archivo_arg = sys.argv[2]   
+    
+    # Llamamos a nuestra nueva función
+    inyectar_paneles(world_arg, archivo_arg)
