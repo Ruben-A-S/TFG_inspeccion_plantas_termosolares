@@ -1,0 +1,14 @@
+# MAPA 3
+# Formato: nombre x y z pitch yaw ancho alto
+
+# panel mas cercano
+muro_1 2.0 -4.0 1.0 -0.785 5.495
+
+# panel intermedio
+muro_2 4.0 6.0 1.0 -0.785 0.785
+
+# panel mas alejado
+muro_3 8.0 0.0 1.0 -0.785 0.0
+
+# panel en frente
+muro_4 -3.0 1.0 1.0 -0.785 3.14

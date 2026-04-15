@@ -45,7 +45,7 @@
             <diffuse>0.8 0.8 0.8 1</diffuse>
             <pbr>
               <metal>
-                <albedo_map>/home/ruben/Carpeta_TFG_Provisional/src/TFG_inspeccion_plantas_termosolares/simulacion/simulation_tools/models/textures/parkour_scenario.jpg</albedo_map>
+                <albedo_map>/home/ruben/Carpeta_TFG_Provisional/src/TFG_inspeccion_plantas_termosolares/simulacion/simulation_tools/models/textures/arenosillo.png</albedo_map>
                 <roughness>0.9</roughness> 
                 <metalness>0.0</metalness> 
               </metal>

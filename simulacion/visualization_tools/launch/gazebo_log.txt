@@ -1,0 +1,4 @@
+[INFO] [launch]: All log files can be found below /home/ruben/.ros/log/2026-04-08-14-35-56-941962-ruben-HP-250-15-6-inch-G9-Notebook-PC-44854
+[INFO] [launch]: Default logging verbosity is set to INFO
+[INFO] [gz-1]: process started with pid [44863]
+[gz-1] Warning: Ignoring XDG_SESSION_TYPE=wayland on Gnome. Use QT_QPA_PLATFORM=wayland to run on Wayland anyway.
