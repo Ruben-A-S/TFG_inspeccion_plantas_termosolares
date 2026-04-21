@@ -5,74 +5,52 @@ import subprocess
 import os
 
 def kill_panel(world, nombre):
-    print(f"Python ordenando eliminar a: {nombre}...")
+    print(f"Python ordenando eliminar a: {nombre} en el mundo: {world}...")
     
-    # TRUCO: Obtenemos la ruta absoluta de la carpeta donde está este script
-    # Así siempre encontrará remove_panel.sh
+    # Obtenemos la ruta del script .sh
     directorio_actual = os.path.dirname(os.path.abspath(__file__))
     ruta_bash = os.path.join(directorio_actual, "remove_panel.sh")
 
-    # Preparamos la lista de comandos (Bash solo necesita el mundo y el nombre para borrar)
+    # Preparamos el comando
     comando = [
         ruta_bash, 
         str(world), 
         str(nombre)
     ]
     
-    # Ejecutamos el comando y esperamos a que termine
+    # Ejecutamos
     resultado = subprocess.run(comando, capture_output=True, text=True)
     
-    # Comprobamos si ha ido bien
     if resultado.returncode == 0:
-        print(f" ¡{nombre} eliminado con éxito!")
+        print(f"  ¡{nombre} eliminado con éxito!")
     else:
-        print(f" Error al eliminar {nombre}:")
-        print(resultado.stderr)
+        print(f"  Error al eliminar {nombre}: {resultado.stderr}")
     
-# --- NUEVA FUNCIÓN PARA IMPORTAR DESDE EL ORQUESTADOR ---
-def eliminar_paneles(world, archivo_txt):
+# --- FUNCIÓN CORREGIDA ---
+def eliminar_paneles(nombre_mundo, array_paneles):
     """
-    Lee un archivo de texto y elimina los paneles correspondientes en Gazebo.
-    Devuelve True si termina con éxito, False si hay un error.
+    nombre_mundo: string con el nombre del mundo en Gazebo
+    array_paneles: lista de diccionarios (cada uno con la clave 'id')
     """
-    if not os.path.isfile(archivo_txt):
-        print(f"[ERROR] No se encuentra el archivo: '{archivo_txt}'.")
-        return False
-
-    print(f"Leyendo mapa para eliminar obstáculos desde: {archivo_txt}\n")
-    
-    with open(archivo_txt, 'r') as file:
-        lineas = file.readlines()
-
-    for numero_linea, linea in enumerate(lineas, 1):
-        linea_limpia = linea.strip()
-
-        if not linea_limpia or linea_limpia.startswith('#'):
-            continue
-
-        parametros = linea_limpia.split()
-
-        if len(parametros) != 6:
-            print(f"Advertencia (Línea {numero_linea}): Se esperaban 6 parámetros, pero hay {len(parametros)}. Saltando línea...")
-            continue
-
-        # Solo necesitamos extraer el nombre (la primera posición) para borrarlo
-        nombre = parametros[0]
+    for panel in array_paneles:
+        # Extraemos el ID que es lo único que Gazebo necesita para borrar
+        id_panel = panel.get('id')
         
-        kill_panel(world, nombre)
+        if id_panel:
+            # CORRECCIÓN: Usamos las variables correctas que recibe la función
+            kill_panel(nombre_mundo, id_panel)
         
     print("[ÉXITO] Eliminación de paneles finalizada.")
     return True
 
-# --- PROTECCIÓN PARA USO EN TERMINAL ---
+# --- PROTECCIÓN PARA USO EN TERMINAL (Si decides usarlo a mano) ---
 if __name__ == "__main__":
-    if len(sys.argv) != 3:
-        print("Error de sintaxis.")
-        print("Uso correcto: python3 Remove_panels_from_file.py <world_name> <archivo.txt>")
+    if len(sys.argv) < 3:
+        print("Uso: python3 Remove_panels_from_file.py <mundo> <nombre_objeto>")
         sys.exit(1)
         
     world_arg = sys.argv[1]
-    archivo_arg = sys.argv[2]   
+    nombre_arg = sys.argv[2]   
     
-    # Llamamos a nuestra nueva función
-    eliminar_paneles(world_arg, archivo_arg)
+    # Si lo usas por terminal, simulamos un array con un solo panel
+    eliminar_paneles(world_arg, [{"id": nombre_arg}])

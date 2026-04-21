@@ -1,81 +1,41 @@
-#!/usr/bin/env python3
-
-import sys
 import subprocess
+import math
 import os
 
-def spawn_panel(world, nombre, x, y, z, pitch, yaw):
-    print(f"Python ordenando crear a: {nombre}...")
-    
-    # Preparamos la lista de comandos (como si lo escribiéramos en la terminal con espacios)
-    
-    directorio_actual = os.path.dirname(os.path.abspath(__file__))
-    ruta_bash = os.path.join(directorio_actual, "add_panel.sh")
-    
-    comando = [
-        ruta_bash, 
-        str(world), 
-        str(nombre), 
-        str(x), 
-        str(y), 
-        str(z), 
-        str(pitch), 
-        str(yaw)
-    ]
-    
-    # Ejecutamos el comando y esperamos a que termine
-    resultado = subprocess.run(comando, capture_output=True, text=True)
-    
-    # Comprobamos si ha ido bien
-    if resultado.returncode == 0:
-        print(f" ¡{nombre} creado con éxito!")
-        # Si quieres ver lo que respondió Bash, descomenta la siguiente línea:
-        # print(resultado.stdout)
-    else:
-        print(f" Error al crear {nombre}:")
-        print(resultado.stderr)
-    
-def inyectar_paneles(world, archivo_txt):
-    """
-    Lee un archivo de texto y genera los paneles en Gazebo.
-    Devuelve True si termina con éxito, False si hay un error.
-    """
-    if not os.path.isfile(archivo_txt):
-        print(f"[ERROR] No se encuentra el archivo de paneles: '{archivo_txt}'.")
-        return False
+def euler_a_cuaternion(roll, pitch, yaw):
+    """Convierte ángulos de Euler a Cuaterniones (x, y, z, w) para Gazebo"""
+    qx = math.sin(roll/2) * math.cos(pitch/2) * math.cos(yaw/2) - math.cos(roll/2) * math.sin(pitch/2) * math.sin(yaw/2)
+    qy = math.cos(roll/2) * math.sin(pitch/2) * math.cos(yaw/2) + math.sin(roll/2) * math.cos(pitch/2) * math.sin(yaw/2)
+    qz = math.cos(roll/2) * math.cos(pitch/2) * math.sin(yaw/2) - math.sin(roll/2) * math.sin(pitch/2) * math.cos(yaw/2)
+    qw = math.cos(roll/2) * math.cos(pitch/2) * math.cos(yaw/2) + math.sin(roll/2) * math.sin(pitch/2) * math.sin(yaw/2)
+    return qx, qy, qz, qw
 
-    print(f"Leyendo mapa de obstáculos desde: {archivo_txt}\n")
+def inyectar_paneles(mundo, array_paneles, modelo):
+    # Asegúrate de que esta ruta base apunta a donde tienes guardado el modelo del panel
+    ruta_modelo = os.path.expanduser(f"~/Carpeta_TFG_Provisional/src/TFG_inspeccion_plantas_termosolares/simulacion/simulacion/models/{modelo}.sdf")
     
-    with open(archivo_txt, 'r') as file:
-        lineas = file.readlines()
-
-    for numero_linea, linea in enumerate(lineas, 1):
-        linea_limpia = linea.strip()
-
-        if not linea_limpia or linea_limpia.startswith('#'):
-            continue
-
-        parametros = linea_limpia.split()
-
-        if len(parametros) != 6:
-            print(f"Advertencia (Línea {numero_linea}): Se esperaban 6 parámetros, pero hay {len(parametros)}. Saltando línea...")
-            continue
-
-        nombre, x, y, z, pitch, yaw = parametros
-        spawn_panel(world, nombre, x, y, z, pitch, yaw)
+    for panel in array_paneles:
+        # Extraemos los datos del diccionario
+        id_panel = panel['id']
+        x = panel['x']
+        y = panel['y']
+        z = panel['z']
+        pitch = panel['pitch']
+        yaw = panel['yaw']
         
-    print("[ÉXITO] Inyección de paneles finalizada.")
-    return True
-
-# --- PROTECCIÓN PARA USO EN TERMINAL ---
-if __name__ == "__main__":
-    if len(sys.argv) != 3:
-        print("Error de sintaxis.")
-        print("Uso correcto: python3 Add_panels_from_file.py <world_name> <ruta_archivo.txt>")
-        sys.exit(1)
+        # Convertimos los ángulos para Gazebo (Roll siempre es 0 para un espejo plantado en el suelo)
+        qx, qy, qz, qw = euler_a_cuaternion(0.0, pitch, yaw)
         
-    world_arg = sys.argv[1]
-    archivo_arg = sys.argv[2]   
-    
-    # Llamamos a nuestra nueva función
-    inyectar_paneles(world_arg, archivo_arg)
+        # Comando de inyección (Fíjate que aquí usamos la variable {mundo})
+        comando = (
+            f"gz service -s /world/{mundo}/create "
+            f"--reqtype gz.msgs.EntityFactory "
+            f"--reptype gz.msgs.Boolean "
+            f"--timeout 1000 "
+            f"--req 'sdf_filename: \"{ruta_modelo}\", name: \"{id_panel}\", "
+            f"pose: {{position: {{x: {x}, y: {y}, z: {z}}}, "
+            f"orientation: {{x: {qx}, y: {qy}, z: {qz}, w: {qw}}}}}'"
+        )
+        
+        # Ejecutamos silenciosamente en la terminal de Linux
+        subprocess.run(comando, shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)

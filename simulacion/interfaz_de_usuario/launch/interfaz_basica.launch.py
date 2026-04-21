@@ -25,5 +25,3 @@ def generate_launch_description():
             arguments=['-d', ruta_scripts + '/rviz.rviz']
         )
     ])
-
-

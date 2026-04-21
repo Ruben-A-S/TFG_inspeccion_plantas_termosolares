@@ -11,28 +11,28 @@ def generate_launch_description():
     return LaunchDescription([
         # 1. NODO DE CALCULO
         ExecuteProcess(
-            cmd=['python3 calcule_node.py'],
+            cmd=['python3', 'calcule_node.py'],
             cwd=ruta_scripts,
             output='screen'
         ),
         
         # 2. NODO DE PUBLICACION DE MARCADORES BASICOS
         ExecuteProcess(
-            cmd=['python3 visualize_node.py'],
+            cmd=['python3', 'visualize_node.py'],
             cwd=ruta_scripts,
             output='screen'
         ),
         
         # 3. NODO DE PUBLICACION DE MARCADORES Y IMAGEN TEORICA DE CAMARA
         ExecuteProcess(
-            cmd=['python3 area_camera_node.py'],
+            cmd=['python3', 'area_camera_node.py'],
             cwd=ruta_scripts,
             output='screen'
         ),
         
         # 3. NODO DE PUBLICACION DE DATOS DE PROCESADO TEORICO
         ExecuteProcess(
-            cmd=['python3 show_data_node.py'],
+            cmd=['python3', 'show_data_node.py'],
             cwd=ruta_scripts,
             output='screen'
         )

@@ -11,18 +11,13 @@ def generate_launch_description():
     return LaunchDescription([
         # 1. NODO DE CONTROL DE SIMULACION
         ExecuteProcess(
-            # OJO: Separado por comas ('python3', 'nombre_del_script.py')
             cmd=['python3', 'control_sim_node.py'], 
             cwd=ruta_scripts,
             output='screen'
         ),
-        
-        # 2. NODO DE CARGA DEL MAPA (Comentado correctamente con #)
-        # Node(
-        #     package='rviz2',
-        #     executable='rviz2',
-        #     name='rviz2',
-        #     output='screen',
-        #     arguments=['-d', ruta_scripts + '/rviz.rviz']
-        # )
+        ExecuteProcess(
+            cmd=['python3', 'load_map_node.py'], 
+            cwd=ruta_scripts,
+            output='screen'
+        )
     ])

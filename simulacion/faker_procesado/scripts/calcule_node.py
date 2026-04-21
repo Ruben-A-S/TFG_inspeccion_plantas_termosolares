@@ -4,26 +4,38 @@ import threading
 import subprocess
 import numpy as np
 import math
+import json # <-- Añadido para procesar el topic
 from scipy.spatial.transform import Rotation as R
 
 import rclpy
-from rclpy.qos import qos_profile_sensor_data
+from rclpy.qos import qos_profile_sensor_data, QoSProfile, DurabilityPolicy
 from rclpy.node import Node
-from geometry_msgs.msg import PoseStamped, PoseArray, Pose, Point, Quaternion
-from std_msgs.msg import Float64MultiArray
+from geometry_msgs.msg import PoseStamped, PoseArray, Pose
+from std_msgs.msg import Float64MultiArray, String # <-- String para el topic de paneles
 
 def get_quaternion_from_euler(roll, pitch, yaw):
-    # Usamos Scipy que es a prueba de balas para evitar fallos de orden de ejes
     r = R.from_euler('xyz', [roll, pitch, yaw], degrees=False)
     return r.as_quat()
 
 class CalculadoraNode(Node):
-    def __init__(self, nombre_mundo, archivo_txt, modelo_dron):
+    # Ya no pedimos los argumentos en el init, excepto los fijos para Gazebo
+    def __init__(self, nombre_mundo="prueba1", modelo_dron="x500"):
         super().__init__('calculadora_node')
         
         self.angulo_cam = 0.785
         self.dist_foc_cam = 0.0
         self.distor_cam = 0.0
+        
+        self.nombre_mundo = nombre_mundo
+        self.modelo_dron = modelo_dron
+        
+        # --- NUEVA SUSCRIPCIÓN AL JSON DE PANELES ---
+        self.sub_paneles_json = self.create_subscription(
+            String, 
+            '/sim_data/paneles_info', 
+            self.paneles_json_callback, 
+            10
+        )
         
         self.sub_param_control = self.create_subscription(
             Float64MultiArray, 
@@ -43,20 +55,65 @@ class CalculadoraNode(Node):
         self.param_mat = []
         self.msg_paneles = PoseArray()
         self.msg_paneles.header.frame_id = "world"
-
-        self.cargar_campo_solar(archivo_txt)
         
-        # Publicamos los paneles periódicamente
-        self.timer = self.create_timer(2.0, self.publicar_paneles)
-
-        # Hilo de Gazebo
+        # El hilo de Gazebo se lanza desde el principio, esperando a que el dron exista
         self.hilo_gz = threading.Thread(
             target=self.escuchar_gazebo_nativo, 
-            args=(nombre_mundo, archivo_txt, modelo_dron)
+            args=(self.nombre_mundo, self.modelo_dron)
         )
         self.hilo_gz.daemon = True 
         self.hilo_gz.start()
-    
+
+        self.get_logger().info("Calculadora Node iniciado. Esperando mapa por /sim_data/paneles_info...")
+
+    # --- NUEVA FUNCIÓN PARA PROCESAR EL JSON ---
+    def paneles_json_callback(self, msg):
+        try:
+            array_paneles = json.loads(msg.data)
+            
+            # Si el array está vacío (se ha vaciado el mundo), limpiamos
+            if not array_paneles:
+                self.param_mat = []
+                self.msg_paneles = PoseArray()
+                self.msg_paneles.header.frame_id = "world"
+                self.get_logger().info("Mapa vaciado en Calculadora.")
+                # Mandamos un array vacío para borrar los marcadores de RViz
+                self.publicar_paneles() 
+                return
+
+            # Si es el mismo mapa que ya tenemos cargado, no hacemos nada extra para ahorrar CPU
+            if len(array_paneles) == len(self.param_mat):
+                return
+
+            self.get_logger().info(f"Recibidos {len(array_paneles)} paneles. Procesando matemáticas...")
+            
+            self.param_mat = []
+            self.msg_paneles = PoseArray()
+            self.msg_paneles.header.frame_id = "world"
+            
+            for panel in array_paneles:
+                x, y, z = panel['x'], panel['y'], panel['z']
+                pitch, yaw = panel['pitch'], panel['yaw']
+                
+                # OJO: Asumimos roll = 0.0
+                q = get_quaternion_from_euler(0.0, float(pitch), float(yaw))
+                p = [float(x), float(y), float(z)]
+                
+                # Añadimos a la matriz para cálculos matemáticos
+                self.param_mat.append([p, q])
+                
+                # Añadimos al mensaje visual de PoseArray
+                pose = Pose()
+                pose.position.x, pose.position.y, pose.position.z = p[0], p[1], p[2]
+                pose.orientation.x, pose.orientation.y, pose.orientation.z, pose.orientation.w = q[0], q[1], q[2], q[3]
+                self.msg_paneles.poses.append(pose)
+            
+            # Forzamos una publicación inmediata de los paneles procesados
+            self.publicar_paneles()
+            
+        except Exception as e:
+            self.get_logger().error(f"Error procesando JSON de paneles: {e}")
+
     def param_control_callback(self, msg):
         if len(msg.data) >= 3:
             self.angulo_cam = msg.data[0]
@@ -67,7 +124,7 @@ class CalculadoraNode(Node):
         self.msg_paneles.header.stamp = self.get_clock().now().to_msg()
         self.pub_paneles.publish(self.msg_paneles)
 
-    def escuchar_gazebo_nativo(self, nombre_mundo, archivo_txt, modelo_dron):
+    def escuchar_gazebo_nativo(self, nombre_mundo, modelo_dron):
         comando = ["gz", "topic", "-e", "-t", f"/world/{nombre_mundo}/pose/info"]
         proceso = subprocess.Popen(comando, stdout=subprocess.PIPE, text=True, bufsize=1)
         
@@ -80,15 +137,15 @@ class CalculadoraNode(Node):
         for linea in iter(proceso.stdout.readline, ''):
             linea = linea.strip()
             
-            # print(f"Gazebo dice: {linea}") # Chivato
-            
             if f'name: "{modelo_dron}_0"' in linea:
                 leyendo_dron = True
                 continue
             elif 'name: ' in linea and leyendo_dron:
                 leyendo_dron = False
-                # print(f"{x_gz}, {y_gz}, {z_gz}, {qw_gz}, {qx_gz}, {qy_gz}, {qz_gz}")
-                self.procesar_geometria(x_gz, y_gz, z_gz, qw_gz, qx_gz, qy_gz, qz_gz)
+                
+                # Solo calcula la geometría si el mapa ya se ha cargado
+                if len(self.param_mat) > 0:
+                    self.procesar_geometria(x_gz, y_gz, z_gz, qw_gz, qx_gz, qy_gz, qz_gz)
                 continue
             
             if leyendo_dron:
@@ -108,6 +165,7 @@ class CalculadoraNode(Node):
                     elif linea.startswith('w:'): qw_gz = float(linea.split(':')[1])
 
     def procesar_geometria(self, x_gz, y_gz, z_gz, qw_gz, qx_gz, qy_gz, qz_gz):
+        # [MANTENEMOS TU CÓDIGO MATEMÁTICO INTACTO AQUÍ...]
         stamp = self.get_clock().now().to_msg()
         
         # 1. Dron
@@ -163,16 +221,14 @@ class CalculadoraNode(Node):
             t = -ref_local[2] / (cam_local[2] - ref_local[2])
             I_local = ref_local + t * (cam_local - ref_local)
             
-            if abs(I_local[0]) <= 1.5 and abs(I_local[1]) <= 1.0:  # Aqui se debe ajustar el ancho
+            if abs(I_local[0]) <= 1.5 and abs(I_local[1]) <= 1.0: 
                 I_world = pos_panel + rot_panel.apply(I_local)
                 ref_world = pos_panel + rot_panel.apply(ref_local)
                 
-                # Guardamos el punto de corte
                 pose_rebote = Pose()
                 pose_rebote.position.x, pose_rebote.position.y, pose_rebote.position.z = I_world[0], I_world[1], I_world[2]
                 msg_rebotes.poses.append(pose_rebote)
                 
-                # Guardamos el punto de reflejo virtual
                 pose_reflejo = Pose()
                 pose_reflejo.position.x, pose_reflejo.position.y, pose_reflejo.position.z = ref_world[0], ref_world[1], ref_world[2]
                 msg_reflejos.poses.append(pose_reflejo)
@@ -180,46 +236,20 @@ class CalculadoraNode(Node):
         self.pub_rebotes.publish(msg_rebotes)
         self.pub_reflejos.publish(msg_reflejos)
 
-    def cargar_campo_solar(self, archivo_txt):
-        print(f"Leyendo mapa desde: {archivo_txt}")
-        with open(archivo_txt, 'r') as file:
-            lineas = file.readlines()
-        
-        for linea in lineas:
-            linea_limpia = linea.strip()
-            if not linea_limpia or linea_limpia.startswith('#'): continue
-            parametros = linea_limpia.split()
-            if len(parametros) != 6: continue
-            
-            nombre, x, y, z, pitch, yaw = parametros
-            q = get_quaternion_from_euler(0.0, float(pitch), float(yaw))
-            p = [float(x), float(y), float(z)]
-            self.param_mat.append([p, q])
-            
-            # Guardar en el mensaje PoseArray
-            pose = Pose()
-            pose.position.x, pose.position.y, pose.position.z = p[0], p[1], p[2]
-            pose.orientation.x, pose.orientation.y, pose.orientation.z, pose.orientation.w = q[0], q[1], q[2], q[3]
-            self.msg_paneles.poses.append(pose)
 
 def main(args=None):
-    if len(sys.argv) != 4: 
-        print("Error: Número de argumentos incorrecto. Uso: python3 calcule_node.py <mundo> <mapa.txt> <dron>")
-        sys.exit(1)
-        
-    if not os.path.isfile(sys.argv[2]):
-        print(f"Error: No se encuentra el archivo de mapa '{sys.argv[2]}'")
-        sys.exit(1)
-        
     rclpy.init(args=args)
-    nodo = CalculadoraNode(sys.argv[1], sys.argv[2], sys.argv[3])
+    # Ya no forzamos argumentos por consola. Asumimos 'prueba1' y 'x500'. 
+    # (Si en el futuro quieres hacerlos dinámicos, habría que suscribirse al orquestador)
+    nodo = CalculadoraNode(nombre_mundo="prueba1", modelo_dron="x500")
     try: 
         rclpy.spin(nodo)
     except KeyboardInterrupt: 
         pass
     finally:
         nodo.destroy_node()
-        rclpy.shutdown()
+        if rclpy.ok():
+            rclpy.shutdown()
 
 if __name__ == "__main__":
     main()

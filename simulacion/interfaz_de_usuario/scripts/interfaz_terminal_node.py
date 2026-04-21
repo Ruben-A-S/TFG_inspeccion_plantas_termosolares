@@ -10,6 +10,7 @@ class SimCliNode(Node):
     def __init__(self):
         super().__init__('sim_cli_node')
         self.pub_mundo = self.create_publisher(String, '/sim_cmd/config_mundo', 10)
+        self.pub_fecha = self.create_publisher(String, '/sim_cmd/config_fecha', 10)
         self.pub_paneles = self.create_publisher(String, '/sim_cmd/config_paneles', 10)
         self.pub_dron = self.create_publisher(String, '/sim_cmd/config_dron', 10)
         self.pub_accion = self.create_publisher(String, '/sim_cmd/accion', 10)
@@ -35,19 +36,20 @@ def menu_interactivo(nodo):
         print("   PANEL DE CONTROL DE SIMULACIÓN ")
         print("="*45)
         print("1.  Configurar Mundo (Nombre y Textura)")
-        print("2.  Configurar Paneles (Archivo CSV)")
-        print("3.  Configurar Dron (Modelo y Posición)")
-        print("-"*45)
-        print("4.  Poblar mundo")
-        print("5.  Vaciar mundo")
-        print("-"*45)
-        print("6.   LANZAR SIMULACIÓN (GENERAR)")
-        print("7.   Detener Simulación (TERMINAR)")
-        print("8.  Apagar Todo y Salir (SALIR)")
+        print("2.  Configurar Fecha y Hora") # <-- NUEVA OPCIÓN
+        print("3.  Configurar Paneles (Archivo CSV)")
+        print("4.  Configurar Dron (Modelo y Posición)")
+        print("-" * 45)
+        print("5.  Poblar mundo")
+        print("6.  Vaciar mundo")
+        print("-" * 45)
+        print("7.  LANZAR SIMULACIÓN (GENERAR)")
+        print("8.  Detener Simulación (TERMINAR)")
+        print("9.  Apagar Todo y Salir (SALIR)")
         print("="*45)
 
         # LA LECTURA POR TECLADO
-        opcion = input(" Elige una opción (1-8): ")
+        opcion = input(" Elige una opción (1-9): ")
 
         if opcion == '1':
             # Si el usuario solo pulsa Enter, coge el valor después del 'or'
@@ -57,12 +59,19 @@ def menu_interactivo(nodo):
             print("   [OK] Datos del mundo enviados al Orquestador.")
 
         elif opcion == '2':
-            ruta = input("   Ruta del CSV [mapa_3.txt]: ") or "mapa_3.txt"
+            # NUEVO BLOQUE: Lectura de Fecha y Hora
+            fecha = input("   Fecha (ej. 10/02/2001) [10/02/2001]: ") or "10/02/2001"
+            hora = input("   Hora (ej. 12:34) [12:34]: ") or "12:34"
+            nodo.publicar_json(nodo.pub_fecha, {"fecha": fecha, "hora": hora})
+            print("   [OK] Datos de fecha y hora enviados al Orquestador.")
+
+        elif opcion == '3':
+            ruta = input("   Ruta del CSV [mapa_3.txt]: ") or "Crescent_Dunes.csv"
             modelo = input("   Modelo del panel [panel]: ") or "panel"
             nodo.publicar_json(nodo.pub_paneles, {"ruta_csv": ruta, "modelo": modelo})
             print("   [OK] Datos de paneles enviados al Orquestador.")
 
-        elif opcion == '3':
+        elif opcion == '4':
             modelo = input("   Modelo de dron [x500]: ") or "x500"
             try:
                 x = float(input("   Coordenada X (ej. 5.0) [0.0]: ") or "0.0")
@@ -72,29 +81,29 @@ def menu_interactivo(nodo):
             except ValueError:
                 print("   [ERROR] Las coordenadas deben ser números. Inténtelo de nuevo.")
 
-        elif opcion == '4':
+        elif opcion == '5':
             print("\n   >>  Enviando orden de POBLAR...")
             nodo.publicar_accion("POBLAR")
             
-        elif opcion == '5':
+        elif opcion == '6':
             print("\n   >>  Enviando orden de VACIAR...")
             nodo.publicar_accion("VACIAR")
             
-        elif opcion == '6':
+        elif opcion == '7':
             print("\n   >>  Enviando orden de GENERAR...")
             nodo.publicar_accion("GENERAR")
 
-        elif opcion == '7':
+        elif opcion == '8':
             print("\n   >>  Enviando orden de TERMINAR...")
             nodo.publicar_accion("TERMINAR")
 
-        elif opcion == '8':
+        elif opcion == '9':
             print("\n   >>  Apagando el Orquestador y saliendo...")
             nodo.publicar_accion("SALIR")
             break # Rompe el bucle while y termina este script
         
         else:
-            print("   [!] Opción no válida. Escribe un número del 1 al 8.")
+            print("   [!] Opción no válida. Escribe un número del 1 al 9.")
 
 
 def main():

@@ -9,30 +9,27 @@ import sys
 # Importamos script externo generador de mundos
 from world_generator import crear_mundo_base
 
-# Importamos script externo inyeccion de paneles
-from Add_panels_from_file import inyectar_paneles
-
-# Importamos script externo eliminar paneles
-from Remove_panels_from_file import eliminar_paneles
-
 class SimulationControlNode(Node):
     def __init__(self):
         super().__init__('simulation_control_node')
 
         # --- ESTADO INTERNO ---
+        self.config_fecha = {"fecha": "10/02/2001", "hora": "12:34"}
         self.config_mundo = {"nombre": "prueba1", "textura": "arenosillo.png"}
-        self.config_paneles = {"modelo": "panel", "ruta_csv": "mapa_3.txt"}
+        self.config_paneles = {"modelo": "panel", "ruta_csv": "Crescent_Dunes.csv"}
         self.config_dron = {"modelo": "x500", "x": 0.0, "y": 0.0}
         self.proceso_simulacion = None 
 
         self.mundo_generado = {"nombre": "prueba1"}
-        self.paneles_generados = {"ruta_csv": "mapa_3.txt"} # ¡Corregido con dos puntos!
+        self.paneles_generados = {"ruta_csv": "mapa_3.txt"} 
         
         # --- PUBLICADORES ---
+        self.pub_gestion_mapa = self.create_publisher(String, '/sim_cmd/gestion_mapa', 10)
         self.pub_estado = self.create_publisher(String, '/sim_status/estado', 10)
         self.pub_log = self.create_publisher(String, '/sim_status/log', 10)
 
         # --- SUBSCRIPTORES ---
+        self.create_subscription(String, '/sim_cmd/config_fecha', self.cb_config_fecha, 10)
         self.create_subscription(String, '/sim_cmd/config_mundo', self.cb_config_mundo, 10)
         self.create_subscription(String, '/sim_cmd/config_paneles', self.cb_config_paneles, 10)
         self.create_subscription(String, '/sim_cmd/config_dron', self.cb_config_dron, 10)
@@ -44,6 +41,13 @@ class SimulationControlNode(Node):
     # ==========================================
     # CALLBACKS DE RECUPERACIÓN DE DATOS
     # ==========================================
+    def cb_config_fecha(self, msg):
+        try:
+            self.config_fecha = json.loads(msg.data)
+            self.enviar_log(f"Configuración de fecha actualizada: {self.config_fecha.get('fecha')} a las {self.config_fecha.get('hora')}")
+        except json.JSONDecodeError:
+            self.enviar_log("ERROR: JSON de fecha inválida.")
+            
     def cb_config_mundo(self, msg):
         try:
             self.config_mundo = json.loads(msg.data)
@@ -144,41 +148,48 @@ class SimulationControlNode(Node):
     # GESTIÓN DE PANELES
     # ==========================================
     def inyectar_obstaculos(self):
+        fecha_mundo = self.config_fecha.get('fecha', '10/02/2001')
+        hora_mundo = self.config_fecha.get('hora', '12:34')
         nombre_csv = self.config_paneles.get('ruta_csv', 'mapa_3.txt')
         modelo_panel = self.config_paneles.get('modelo', 'panel')
+        nombre_mundo = self.mundo_generado.get('nombre', 'prueba1')
         
-        # 1. Actualizamos el estado interno con la sintaxis correcta de diccionario
+        # 1. Actualizamos el estado interno
         self.paneles_generados = {"ruta_csv": nombre_csv}
         
-        # 2. F-string corregido
-        self.enviar_log(f"Poblando mundo con paneles modelo '{modelo_panel}', siguiendo el mapa '{nombre_csv}'.")
+        # 2. Empaquetamos la orden
+        orden = {
+            "accion": "CARGAR",
+            "fecha": fecha_mundo,
+            "hora": hora_mundo,
+            "csv": nombre_csv,
+            "modelo": modelo_panel,
+            "mundo": nombre_mundo
+        }
         
-        # 3. CONSTRUIMOS LA RUTA ABSOLUTA para que Python no se pierda
-        ruta_absoluta_txt = os.path.expanduser(f"~/{nombre_csv}")
-        nombre_mundo = self.mundo_generado.get('nombre', 'prueba1')
-
-        try:
-            # 4. Llamamos a la función inyectando la ruta absoluta
-            inyectar_paneles(nombre_mundo, os.path.expanduser(f"{ruta_absoluta_txt}"))
-            self.enviar_log("Todos los paneles han sido inyectados.")
-        except Exception as e:
-            self.enviar_log(f"ERROR al inyectar los paneles: {e}")
-    
+        # 3. Enviamos la orden al nodo load_map
+        msg = String()
+        msg.data = json.dumps(orden)
+        self.pub_gestion_mapa.publish(msg)
+        
+        self.enviar_log(f"Orden enviada a load_map para poblar '{nombre_mundo}' con '{nombre_csv}'.")
+        
     def eliminar_obstaculos(self):
         nombre_csv = self.paneles_generados.get('ruta_csv', 'mapa_3.txt')
-        
-        self.enviar_log(f"Vaciando mundo de paneles, siguiendo el mapa '{nombre_csv}'.")
-        
-        ruta_absoluta_txt = os.path.expanduser(f"~/{nombre_csv}")
         nombre_mundo = self.mundo_generado.get('nombre', 'prueba1')
 
-        try:
-            eliminar_paneles(nombre_mundo, os.path.expanduser(f"{ruta_absoluta_txt}"))
-            self.enviar_log("Todos los paneles han sido eliminados.")
-            self.paneles_generados = {} # Limpiamos el registro
-        except Exception as e:
-            self.enviar_log(f"ERROR al eliminar los paneles: {e}")
-    
+        orden = {
+            "accion": "VACIAR",
+            "csv": nombre_csv,
+            "mundo": nombre_mundo
+        }
+
+        msg = String()
+        msg.data = json.dumps(orden)
+        self.pub_gestion_mapa.publish(msg)
+        self.enviar_log(f"Orden enviada a load_map para vaciar el mapa '{nombre_csv}'.")
+        self.paneles_generados = {}
+
     # ==========================================
     # UTILIDADES
     # ==========================================
