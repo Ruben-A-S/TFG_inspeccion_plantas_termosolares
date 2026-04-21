@@ -120,7 +120,7 @@ class AreaCameraNode(Node):
 
         # --- DIBUJAR PANELES Y SUS PROYECCIONES ---
         for i, pose in enumerate(self.paneles_poses):
-            ancho, alto = 1.5, 1.0
+            ancho, alto = 5.7075, 5.2105
             pts_locales = [
                 np.array([ancho, alto, 0.0]), np.array([-ancho, alto, 0.0]),
                 np.array([-ancho, -alto, 0.0]), np.array([ancho, -alto, 0.0]),

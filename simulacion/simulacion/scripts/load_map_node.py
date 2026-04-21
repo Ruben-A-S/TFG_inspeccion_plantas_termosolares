@@ -157,7 +157,7 @@ class LoadMapNode(Node):
 
                     panel = {
                         "id": f"panel_{len(lista_temporal) + 1}", # Usamos lista_temporal
-                        "x": x, "y": y, "z": z,
+                        "x": x, "y": y, "z": z + 5,
                         "f_len_x": float(fila["Focal Length x"]),
                         "f_len_y": float(fila["Focal Length y"]),
                         "aim_x": aim_x, "aim_y": aim_y, "aim_z": aim_z,

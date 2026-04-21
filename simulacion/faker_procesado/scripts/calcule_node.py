@@ -4,24 +4,24 @@ import threading
 import subprocess
 import numpy as np
 import math
-import json # <-- Añadido para procesar el topic
+import json
 from scipy.spatial.transform import Rotation as R
 
 import rclpy
 from rclpy.qos import qos_profile_sensor_data, QoSProfile, DurabilityPolicy
 from rclpy.node import Node
 from geometry_msgs.msg import PoseStamped, PoseArray, Pose
-from std_msgs.msg import Float64MultiArray, String # <-- String para el topic de paneles
+from std_msgs.msg import Float64MultiArray, String
 
 def get_quaternion_from_euler(roll, pitch, yaw):
     r = R.from_euler('xyz', [roll, pitch, yaw], degrees=False)
     return r.as_quat()
 
 class CalculadoraNode(Node):
-    # Ya no pedimos los argumentos en el init, excepto los fijos para Gazebo
     def __init__(self, nombre_mundo="prueba1", modelo_dron="x500"):
         super().__init__('calculadora_node')
         
+        # Parámetros de cámara por defecto
         self.angulo_cam = 0.785
         self.dist_foc_cam = 0.0
         self.distor_cam = 0.0
@@ -29,7 +29,7 @@ class CalculadoraNode(Node):
         self.nombre_mundo = nombre_mundo
         self.modelo_dron = modelo_dron
         
-        # --- NUEVA SUSCRIPCIÓN AL JSON DE PANELES ---
+        # --- SUBSCRIPCIONES ---
         self.sub_paneles_json = self.create_subscription(
             String, 
             '/sim_data/paneles_info', 
@@ -44,7 +44,14 @@ class CalculadoraNode(Node):
             qos_profile_sensor_data
         )
         
-        # Publicadores de datos geométricos
+        self.sub_sim_activa = self.create_subscription(
+            String,
+            '/sim_status/sim_activa', 
+            self.sim_activa_callback,
+            10
+        )
+        
+        # --- PUBLICADORES GEOMÉTRICOS ---
         self.pub_paneles = self.create_publisher(PoseArray, '/datos/paneles', 10)
         self.pub_dron = self.create_publisher(PoseStamped, '/datos/dron', 10)
         self.pub_camara = self.create_publisher(PoseStamped, '/datos/camara', 10)
@@ -52,21 +59,23 @@ class CalculadoraNode(Node):
         self.pub_rebotes = self.create_publisher(PoseArray, '/datos/rebotes', 10)
         self.pub_reflejos = self.create_publisher(PoseArray, '/datos/reflejos', 10)
 
+        # Variables de estado
         self.param_mat = []
         self.msg_paneles = PoseArray()
         self.msg_paneles.header.frame_id = "world"
         
-        # El hilo de Gazebo se lanza desde el principio, esperando a que el dron exista
-        self.hilo_gz = threading.Thread(
-            target=self.escuchar_gazebo_nativo, 
-            args=(self.nombre_mundo, self.modelo_dron)
-        )
-        self.hilo_gz.daemon = True 
-        self.hilo_gz.start()
+        # Control del proceso de Gazebo
+        self.proceso_gz = None 
+        self.hilo_gz = None
+        
+        # Lanzamos el espía inicial
+        self.lanzar_espia_gazebo()
 
-        self.get_logger().info("Calculadora Node iniciado. Esperando mapa por /sim_data/paneles_info...")
+        self.get_logger().info(f"Calculadora Node iniciado. Esperando mapa en el mundo '{self.nombre_mundo}'...")
 
-    # --- NUEVA FUNCIÓN PARA PROCESAR EL JSON ---
+    # ==========================================
+    # CALLBACKS DE RECEPCIÓN DE DATOS
+    # ==========================================
     def paneles_json_callback(self, msg):
         try:
             array_paneles = json.loads(msg.data)
@@ -77,11 +86,10 @@ class CalculadoraNode(Node):
                 self.msg_paneles = PoseArray()
                 self.msg_paneles.header.frame_id = "world"
                 self.get_logger().info("Mapa vaciado en Calculadora.")
-                # Mandamos un array vacío para borrar los marcadores de RViz
                 self.publicar_paneles() 
                 return
 
-            # Si es el mismo mapa que ya tenemos cargado, no hacemos nada extra para ahorrar CPU
+            # Si es el mismo mapa que ya tenemos cargado, ahorramos CPU
             if len(array_paneles) == len(self.param_mat):
                 return
 
@@ -92,23 +100,28 @@ class CalculadoraNode(Node):
             self.msg_paneles.header.frame_id = "world"
             
             for panel in array_paneles:
+                # Extraemos posición y ángulos
                 x, y, z = panel['x'], panel['y'], panel['z']
                 pitch, yaw = panel['pitch'], panel['yaw']
                 
-                # OJO: Asumimos roll = 0.0
+                # Extraemos dimensiones (usamos fallback a las medidas estándar si fallara el JSON)
+                width = panel.get('width_x', 10.421)
+                length = panel.get('length_y', 11.415)
+                
+                # Asumimos roll = 0.0
                 q = get_quaternion_from_euler(0.0, float(pitch), float(yaw))
                 p = [float(x), float(y), float(z)]
                 
-                # Añadimos a la matriz para cálculos matemáticos
-                self.param_mat.append([p, q])
+                # Guardamos la posición, orientación Y LAS DIMENSIONES
+                self.param_mat.append([p, q, width, length])
                 
-                # Añadimos al mensaje visual de PoseArray
+                # Mensaje visual de PoseArray
                 pose = Pose()
                 pose.position.x, pose.position.y, pose.position.z = p[0], p[1], p[2]
                 pose.orientation.x, pose.orientation.y, pose.orientation.z, pose.orientation.w = q[0], q[1], q[2], q[3]
                 self.msg_paneles.poses.append(pose)
             
-            # Forzamos una publicación inmediata de los paneles procesados
+            # Publicación inmediata de los paneles procesados
             self.publicar_paneles()
             
         except Exception as e:
@@ -120,13 +133,47 @@ class CalculadoraNode(Node):
             self.dist_foc_cam = msg.data[1]
             self.distor_cam = msg.data[2]
     
+    def sim_activa_callback(self, msg):
+        try:
+            datos = json.loads(msg.data)
+            nuevo_mundo = datos.get("mundo")
+            nuevo_dron = datos.get("dron")
+            
+            if nuevo_mundo != self.nombre_mundo or nuevo_dron != self.modelo_dron:
+                self.get_logger().info(f"¡Nueva simulación detectada! Mundo: '{nuevo_mundo}', Dron: '{nuevo_dron}'")
+                
+                self.nombre_mundo = nuevo_mundo
+                self.modelo_dron = nuevo_dron
+                
+                self.lanzar_espia_gazebo() 
+                
+        except json.JSONDecodeError:
+            pass
+            
     def publicar_paneles(self):
         self.msg_paneles.header.stamp = self.get_clock().now().to_msg()
         self.pub_paneles.publish(self.msg_paneles)
 
+    # ==========================================
+    # LÓGICA DE CONEXIÓN CON GAZEBO
+    # ==========================================
+    def lanzar_espia_gazebo(self):
+        if self.proceso_gz is not None:
+            self.get_logger().info(f"Cerrando escucha del mundo anterior...")
+            self.proceso_gz.terminate()
+            self.proceso_gz.wait()
+
+        self.hilo_gz = threading.Thread(
+            target=self.escuchar_gazebo_nativo, 
+            args=(self.nombre_mundo, self.modelo_dron)
+        )
+        self.hilo_gz.daemon = True 
+        self.hilo_gz.start()
+
     def escuchar_gazebo_nativo(self, nombre_mundo, modelo_dron):
         comando = ["gz", "topic", "-e", "-t", f"/world/{nombre_mundo}/pose/info"]
-        proceso = subprocess.Popen(comando, stdout=subprocess.PIPE, text=True, bufsize=1)
+        
+        self.proceso_gz = subprocess.Popen(comando, stdout=subprocess.PIPE, text=True, bufsize=1)
         
         leyendo_dron = False
         leyendo_posicion = False
@@ -134,7 +181,7 @@ class CalculadoraNode(Node):
         x_gz = y_gz = z_gz = 0.0
         qw_gz = 1.0; qx_gz = qy_gz = qz_gz = 0.0
         
-        for linea in iter(proceso.stdout.readline, ''):
+        for linea in iter(self.proceso_gz.stdout.readline, ''):
             linea = linea.strip()
             
             if f'name: "{modelo_dron}_0"' in linea:
@@ -143,7 +190,6 @@ class CalculadoraNode(Node):
             elif 'name: ' in linea and leyendo_dron:
                 leyendo_dron = False
                 
-                # Solo calcula la geometría si el mapa ya se ha cargado
                 if len(self.param_mat) > 0:
                     self.procesar_geometria(x_gz, y_gz, z_gz, qw_gz, qx_gz, qy_gz, qz_gz)
                 continue
@@ -164,8 +210,10 @@ class CalculadoraNode(Node):
                     elif linea.startswith('z:'): qz_gz = float(linea.split(':')[1])
                     elif linea.startswith('w:'): qw_gz = float(linea.split(':')[1])
 
+    # ==========================================
+    # CÁLCULOS MATEMÁTICOS Y ÓPTICOS
+    # ==========================================
     def procesar_geometria(self, x_gz, y_gz, z_gz, qw_gz, qx_gz, qy_gz, qz_gz):
-        # [MANTENEMOS TU CÓDIGO MATEMÁTICO INTACTO AQUÍ...]
         stamp = self.get_clock().now().to_msg()
         
         # 1. Dron
@@ -207,8 +255,12 @@ class CalculadoraNode(Node):
         msg_reflejos.header.stamp = stamp
         
         for param in self.param_mat:
+            # Recuperamos los datos, incluyendo el ancho y largo específicos
             pos_panel = np.array(param[0])
             rot_panel = R.from_quat(param[1])
+            width = float(param[2])
+            length = float(param[3])
+            
             rot_panel_inv = rot_panel.inv()
             
             cam_local = rot_panel_inv.apply(pos_cam - pos_panel)
@@ -221,7 +273,8 @@ class CalculadoraNode(Node):
             t = -ref_local[2] / (cam_local[2] - ref_local[2])
             I_local = ref_local + t * (cam_local - ref_local)
             
-            if abs(I_local[0]) <= 1.5 and abs(I_local[1]) <= 1.0: 
+            # Usamos el ancho y alto del panel actual (dividido entre 2 porque miramos desde el centro)
+            if abs(I_local[0]) <= (width / 2.0) and abs(I_local[1]) <= (length / 2.0): 
                 I_world = pos_panel + rot_panel.apply(I_local)
                 ref_world = pos_panel + rot_panel.apply(ref_local)
                 
@@ -236,17 +289,17 @@ class CalculadoraNode(Node):
         self.pub_rebotes.publish(msg_rebotes)
         self.pub_reflejos.publish(msg_reflejos)
 
-
 def main(args=None):
     rclpy.init(args=args)
-    # Ya no forzamos argumentos por consola. Asumimos 'prueba1' y 'x500'. 
-    # (Si en el futuro quieres hacerlos dinámicos, habría que suscribirse al orquestador)
     nodo = CalculadoraNode(nombre_mundo="prueba1", modelo_dron="x500")
     try: 
         rclpy.spin(nodo)
     except KeyboardInterrupt: 
         pass
     finally:
+        if nodo.proceso_gz is not None:
+            nodo.proceso_gz.terminate()
+            nodo.proceso_gz.wait()
         nodo.destroy_node()
         if rclpy.ok():
             rclpy.shutdown()

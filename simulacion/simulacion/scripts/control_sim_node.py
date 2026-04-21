@@ -27,6 +27,7 @@ class SimulationControlNode(Node):
         self.pub_gestion_mapa = self.create_publisher(String, '/sim_cmd/gestion_mapa', 10)
         self.pub_estado = self.create_publisher(String, '/sim_status/estado', 10)
         self.pub_log = self.create_publisher(String, '/sim_status/log', 10)
+        self.pub_sim_activa = self.create_publisher(String, '/sim_status/sim_activa', 10)
 
         # --- SUBSCRIPTORES ---
         self.create_subscription(String, '/sim_cmd/config_fecha', self.cb_config_fecha, 10)
@@ -136,6 +137,14 @@ class SimulationControlNode(Node):
         
         self.cambiar_estado("SIMULACION_CORRIENDO")
         self.mundo_generado = {"nombre": nombre_mundo}
+        
+        config_activa = {
+            "mundo": nombre_mundo,
+            "dron": modelo_dron
+        }
+        msg_activa = String()
+        msg_activa.data = json.dumps(config_activa)
+        self.pub_sim_activa.publish(msg_activa)
         
     def cerrar_simulacion(self):
         self.enviar_log("Cerrando simulador y limpiando procesos de Linux...")
