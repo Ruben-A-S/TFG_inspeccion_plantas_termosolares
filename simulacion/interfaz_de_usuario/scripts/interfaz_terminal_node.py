@@ -14,6 +14,7 @@ class SimCliNode(Node):
         self.pub_paneles = self.create_publisher(String, '/sim_cmd/config_paneles', 10)
         self.pub_dron = self.create_publisher(String, '/sim_cmd/config_dron', 10)
         self.pub_accion = self.create_publisher(String, '/sim_cmd/accion', 10)
+        self.pub_camara = self.create_publisher(String, '/sim_cmd/config_camara', 10)
 
     def publicar_json(self, publicador, diccionario):
         msg = String()
@@ -36,20 +37,22 @@ def menu_interactivo(nodo):
         print("   PANEL DE CONTROL DE SIMULACIÓN ")
         print("="*45)
         print("1.  Configurar Mundo (Nombre y Textura)")
-        print("2.  Configurar Fecha y Hora") # <-- NUEVA OPCIÓN
-        print("3.  Configurar Paneles (Archivo CSV)")
+        print("2.  Configurar Fecha y Hora")
+        print("3.  Configurar Paneles (Archivo CSV y Modelo)")
         print("4.  Configurar Dron (Modelo y Posición)")
         print("-" * 45)
-        print("5.  Poblar mundo")
-        print("6.  Vaciar mundo")
+        print("5.  Girar Camara en vivo (Grados)")
+        print("-" * 45)        
+        print("6.  Poblar mundo")
+        print("7.  Vaciar mundo")
         print("-" * 45)
-        print("7.  LANZAR SIMULACIÓN (GENERAR)")
-        print("8.  Detener Simulación (TERMINAR)")
-        print("9.  Apagar Todo y Salir (SALIR)")
+        print("8.  LANZAR SIMULACIÓN (GENERAR)")
+        print("9.  Detener Simulación (TERMINAR)")
+        print("10.  Apagar Todo y Salir (SALIR)")
         print("="*45)
 
         # LA LECTURA POR TECLADO
-        opcion = input(" Elige una opción (1-9): ")
+        opcion = input(" Elige una opción (1-10): ")
 
         if opcion == '1':
             # Si el usuario solo pulsa Enter, coge el valor después del 'or'
@@ -80,30 +83,38 @@ def menu_interactivo(nodo):
                 print("   [OK] Datos del dron enviados al Orquestador.")
             except ValueError:
                 print("   [ERROR] Las coordenadas deben ser números. Inténtelo de nuevo.")
-
+                
         elif opcion == '5':
+            try:
+                grados = float(input("   Ángulo hacia abajo (0=Frente, 90=Suelo) [45]: ") or "45")
+                nodo.publicar_json(nodo.pub_camara, {"angulo": grados})
+                print(f"   [OK] Orden de giro a {grados}° enviada.")
+            except ValueError:
+                print("   [ERROR] Introduce un número válido.")
+                
+        elif opcion == '6':
             print("\n   >>  Enviando orden de POBLAR...")
             nodo.publicar_accion("POBLAR")
             
-        elif opcion == '6':
+        elif opcion == '7':
             print("\n   >>  Enviando orden de VACIAR...")
             nodo.publicar_accion("VACIAR")
             
-        elif opcion == '7':
+        elif opcion == '8':
             print("\n   >>  Enviando orden de GENERAR...")
             nodo.publicar_accion("GENERAR")
 
-        elif opcion == '8':
+        elif opcion == '9':
             print("\n   >>  Enviando orden de TERMINAR...")
             nodo.publicar_accion("TERMINAR")
 
-        elif opcion == '9':
+        elif opcion == '10':
             print("\n   >>  Apagando el Orquestador y saliendo...")
             nodo.publicar_accion("SALIR")
             break # Rompe el bucle while y termina este script
         
         else:
-            print("   [!] Opción no válida. Escribe un número del 1 al 9.")
+            print("   [!] Opción no válida. Escribe un número del 1 al 10.")
 
 
 def main():

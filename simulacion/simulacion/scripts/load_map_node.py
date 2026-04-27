@@ -19,7 +19,7 @@ def obtener_sol_inventado(fecha, hora):
     Sol de mentira (Mock). Devuelve unas coordenadas X, Y, Z estáticas.
     Cuando sepas cómo calcularlo, metes tu lógica aquí.
     """
-    return [1000.0, 0.0, 500.0]
+    return [1000.0, 100.0, 500.0]
 
 def calcular_orientacion_heliostato(pos_panel, pos_torre, posicion_sol):
     """

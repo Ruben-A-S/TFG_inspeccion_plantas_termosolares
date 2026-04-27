@@ -1,6 +1,6 @@
 import rclpy
 from rclpy.node import Node
-from std_msgs.msg import String
+from std_msgs.msg import String, Float64MultiArray
 import json
 import subprocess
 import os
@@ -28,6 +28,7 @@ class SimulationControlNode(Node):
         self.pub_estado = self.create_publisher(String, '/sim_status/estado', 10)
         self.pub_log = self.create_publisher(String, '/sim_status/log', 10)
         self.pub_sim_activa = self.create_publisher(String, '/sim_status/sim_activa', 10)
+        self.pub_params_control = self.create_publisher(Float64MultiArray, '/parametros_control', 10)
 
         # --- SUBSCRIPTORES ---
         self.create_subscription(String, '/sim_cmd/config_fecha', self.cb_config_fecha, 10)
@@ -35,6 +36,7 @@ class SimulationControlNode(Node):
         self.create_subscription(String, '/sim_cmd/config_paneles', self.cb_config_paneles, 10)
         self.create_subscription(String, '/sim_cmd/config_dron', self.cb_config_dron, 10)
         self.create_subscription(String, '/sim_cmd/accion', self.cb_accion, 10)
+        self.create_subscription(String, '/sim_cmd/config_camara', self.cb_config_camara, 10)
 
         self.enviar_log("Nodo Orquestador Iniciado. Esperando configuraciones...")
         self.cambiar_estado("ESPERANDO_DATOS")
@@ -69,6 +71,22 @@ class SimulationControlNode(Node):
             self.enviar_log(f"Configuración de dron actualizada: {self.config_dron.get('modelo')} en X={self.config_dron.get('x')}, Y={self.config_dron.get('y')}")
         except json.JSONDecodeError:
             self.enviar_log("ERROR: JSON de dron inválido.")
+    
+    def cb_config_camara(self, msg):
+        try:
+            datos = json.loads(msg.data)
+            grados = datos.get("angulo", 45.0)
+            # Convertimos a radianes aquí para que la calculadora reciba el dato listo
+            radianes = grados * (3.14159265 / 180.0)
+            # Preparamos el mensaje para la calculadora (Float64MultiArray)
+            from std_msgs.msg import Float64MultiArray
+            msg_control = Float64MultiArray()
+            # [Angulo, Focal (por defecto 1.5), Distorsión (0.0)]
+            msg_control.data = [float(radianes), 1.5, 0.0]        
+            self.pub_params_control.publish(msg_control)
+            self.enviar_log(f"Cámara movida a {grados} grados ({radianes:.3f} rad)")
+        except Exception as e:
+            self.enviar_log(f"ERROR al procesar ángulo de cámara: {e}")
             
     # ==========================================
     # CALLBACK DE ACCIONES PRINCIPALES
@@ -95,6 +113,9 @@ class SimulationControlNode(Node):
     # LÓGICA DE NEGOCIO (Los "Músculos")
     # ==========================================
     def ejecutar_generacion_total(self):
+        if self.proceso_simulacion is not None:
+            self.enviar_log("ADVERTENCIA: La simulación ya está corriendo. Cierra la actual (Opción 9) antes de generar otra.")
+            return
         self.cambiar_estado("ARRANCANDO_SIMULACION")
         self.enviar_log("Fase 1: Preparando mundo virtual...")
         

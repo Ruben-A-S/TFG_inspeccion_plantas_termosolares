@@ -16,7 +16,14 @@ def generate_launch_description():
             output='screen'
         ),
         
-        # 2. RViz 2
+        # 2. NODO DE INTERFAZ DE RESPUESTA
+        ExecuteProcess(
+            cmd=['gnome-terminal', '--', 'bash', '-c', 'python3 interfaz_feedback_node.py'],
+            cwd=ruta_scripts,
+            output='screen'
+        ),
+        
+        # 3. RViz 2
         Node(
             package='rviz2',
             executable='rviz2',
