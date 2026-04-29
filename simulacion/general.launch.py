@@ -5,6 +5,8 @@ from launch_ros.actions import Node
 
 def generate_launch_description():
 
+    ruta_config = '/home/ruben/Carpeta_TFG_Provisional/src/TFG_inspeccion_plantas_termosolares/simulacion/config'
+    
     ruta_scripts_interfaz = '/home/ruben/Carpeta_TFG_Provisional/src/TFG_inspeccion_plantas_termosolares/simulacion/interfaz_de_usuario/scripts'
     
     ruta_scripts_simulacion = '/home/ruben/Carpeta_TFG_Provisional/src/TFG_inspeccion_plantas_termosolares/simulacion/simulacion/scripts'
@@ -30,7 +32,7 @@ def generate_launch_description():
             executable='rviz2',
             name='rviz2',
             output='screen',
-            arguments=['-d', ruta_scripts_interfaz + '/rviz.rviz']
+            arguments=['-d', ruta_config + '/rviz.rviz']
         ),
         
         # 2. Launch simulacion

@@ -8,6 +8,8 @@ def generate_launch_description():
     # Ajusta esto si en el futuro mueves la carpeta
     ruta_scripts = '/home/ruben/Carpeta_TFG_Provisional/src/TFG_inspeccion_plantas_termosolares/simulacion/interfaz_de_usuario/scripts'
     
+    ruta_config = '/home/ruben/Carpeta_TFG_Provisional/src/TFG_inspeccion_plantas_termosolares/simulacion/config'
+    
     return LaunchDescription([
         # 1. NODO DE INTERFAZ BASICA
         ExecuteProcess(
@@ -29,6 +31,6 @@ def generate_launch_description():
             executable='rviz2',
             name='rviz2',
             output='screen',
-            arguments=['-d', ruta_scripts + '/rviz.rviz']
+            arguments=['-d', ruta_config + '/rviz.rviz']
         )
     ])

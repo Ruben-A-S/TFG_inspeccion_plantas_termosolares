@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+
 import sys
 import os
 import threading
@@ -58,6 +60,8 @@ class CalculadoraNode(Node):
         self.pub_luz = self.create_publisher(PoseStamped, '/datos/luz', 10)
         self.pub_rebotes = self.create_publisher(PoseArray, '/datos/rebotes', 10)
         self.pub_reflejos = self.create_publisher(PoseArray, '/datos/reflejos', 10)
+        
+        self.pub_datos_consolidados = self.create_publisher(String, '/inspeccion/datos_crudos', 10)
 
         # Variables de estado
         self.param_mat = []
@@ -100,6 +104,8 @@ class CalculadoraNode(Node):
             self.msg_paneles.header.frame_id = "world"
             
             for panel in array_paneles:
+                id_panel = panel['id']
+            
                 # Extraemos posición y ángulos
                 x, y, z = panel['x'], panel['y'], panel['z']
                 pitch, yaw = panel['pitch'], panel['yaw']
@@ -112,8 +118,8 @@ class CalculadoraNode(Node):
                 q = get_quaternion_from_euler(0.0, float(pitch), float(yaw))
                 p = [float(x), float(y), float(z)]
                 
-                # Guardamos la posición, orientación Y LAS DIMENSIONES
-                self.param_mat.append([p, q, width, length])
+                # Guardamos el ID, posición, orientación Y LAS DIMENSIONES
+                self.param_mat.append([id_panel, p, q, width, length])
                 
                 # Mensaje visual de PoseArray
                 pose = Pose()
@@ -254,12 +260,14 @@ class CalculadoraNode(Node):
         msg_reflejos.header.frame_id = "world"
         msg_reflejos.header.stamp = stamp
         
+        lista_datos_consolidados = []
+        
         for param in self.param_mat:
-            # Recuperamos los datos, incluyendo el ancho y largo específicos
-            pos_panel = np.array(param[0])
-            rot_panel = R.from_quat(param[1])
-            width = float(param[2])
-            length = float(param[3])
+            id_panel = param[0]
+            pos_panel = np.array(param[1])
+            rot_panel = R.from_quat(param[2])
+            width = float(param[3])
+            length = float(param[4])
             
             rot_panel_inv = rot_panel.inv()
             
@@ -270,14 +278,18 @@ class CalculadoraNode(Node):
                 continue
             
             ref_local = np.array([src_local[0], src_local[1], -src_local[2]])
-            t = -ref_local[2] / (cam_local[2] - ref_local[2])
+            
+            denominador = cam_local[2] - ref_local[2]
+            if abs(denominador) < 1e-6: continue # Evitamos divisiones por cero
+            
+            t = -ref_local[2] / denominador
             I_local = ref_local + t * (cam_local - ref_local)
             
-            # Usamos el ancho y alto del panel actual (dividido entre 2 porque miramos desde el centro)
             if abs(I_local[0]) <= (width / 2.0) and abs(I_local[1]) <= (length / 2.0): 
                 I_world = pos_panel + rot_panel.apply(I_local)
                 ref_world = pos_panel + rot_panel.apply(ref_local)
                 
+                # Estos se siguen publicando en global para Rviz
                 pose_rebote = Pose()
                 pose_rebote.position.x, pose_rebote.position.y, pose_rebote.position.z = I_world[0], I_world[1], I_world[2]
                 msg_rebotes.poses.append(pose_rebote)
@@ -286,8 +298,32 @@ class CalculadoraNode(Node):
                 pose_reflejo.position.x, pose_reflejo.position.y, pose_reflejo.position.z = ref_world[0], ref_world[1], ref_world[2]
                 msg_reflejos.poses.append(pose_reflejo)
                 
+                normal_teorica = rot_panel.apply([0.0, 0.0, 1.0])
+                
+                # --- AQUÍ ESTÁ EL CAMBIO CLAVE ---
+                dato_impacto = {
+                    "id_panel": id_panel,
+                    "rebote_local": [float(I_local[0]), float(I_local[1]), float(I_local[2])], # ¡MANDAMOS EL LOCAL!
+                    "normal_teorica": [float(normal_teorica[0]), float(normal_teorica[1]), float(normal_teorica[2])],
+                    "pose_panel": { # MANDAMOS LA POSE DEL PANEL
+                        "pos": [float(pos_panel[0]), float(pos_panel[1]), float(pos_panel[2])],
+                        "quat": [float(rot_panel.as_quat()[0]), float(rot_panel.as_quat()[1]), float(rot_panel.as_quat()[2]), float(rot_panel.as_quat()[3])]
+                    },
+                    "dron": {
+                        "pos": [float(x_gz), float(y_gz), float(z_gz)],
+                        "quat": [float(qx_gz), float(qy_gz), float(qz_gz), float(qw_gz)]
+                    }
+                }
+                lista_datos_consolidados.append(dato_impacto)
+                # ---------------------------------
+                
         self.pub_rebotes.publish(msg_rebotes)
         self.pub_reflejos.publish(msg_reflejos)
+        
+        if lista_datos_consolidados:
+            msg_json = String()
+            msg_json.data = json.dumps(lista_datos_consolidados)
+            self.pub_datos_consolidados.publish(msg_json)
 
 def main(args=None):
     rclpy.init(args=args)
