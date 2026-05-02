@@ -16,7 +16,7 @@ class Color:
     ENDC = '\033[0m'
     BOLD = '\033[1m'
 
-class FeedbackNode(Node):
+class interfazFeedbackNode(Node):
     def __init__(self):
         super().__init__('interfaz_feedback_node')
         
@@ -29,7 +29,7 @@ class FeedbackNode(Node):
         self.estado_actual = ""
 
         print(f"\n{Color.OKCYAN}{Color.BOLD}" + "="*50)
-        print("       SISTEMA DE MONITOREO Y RESPUESTAS ACTIVE")
+        print("       SISTEMA DE MONITOREO Y RESPUESTAS ACTIVO")
         print("="*50 + f"{Color.ENDC}\n")
 
     def cb_estado(self, msg):
@@ -63,7 +63,7 @@ class FeedbackNode(Node):
 
 def main(args=None):
     rclpy.init(args=args)
-    nodo = FeedbackNode()
+    nodo = interfazFeedbackNode()
     try:
         rclpy.spin(nodo)
     except KeyboardInterrupt:

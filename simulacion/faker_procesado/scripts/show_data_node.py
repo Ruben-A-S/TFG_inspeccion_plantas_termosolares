@@ -21,7 +21,7 @@ class ShowDataNode(Node):
 
         # --- PUBLICADORES ---
         self.pub_feedback = self.create_publisher(String, '/sim_status/log', 10)
-        self.pub_datos_normales = self.create_publisher(String, '/inspeccion/datos_normal', 10)
+        self.pub_datos_normales = self.create_publisher(String, '/inspeccion/datos_filtrados', 10)
 
         # --- Parámetros de la cámara ---
         self.focal_dist = 1.5  

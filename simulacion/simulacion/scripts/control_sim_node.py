@@ -9,9 +9,9 @@ import sys
 # Importamos script externo generador de mundos
 from world_generator import crear_mundo_base
 
-class SimulationControlNode(Node):
+class ControlSimNode(Node):
     def __init__(self):
-        super().__init__('simulation_control_node')
+        super().__init__('control_sim_node')
 
         # --- ESTADO INTERNO ---
         self.config_fecha = {"fecha": "10/02/2001", "hora": "12:34"}
@@ -236,7 +236,7 @@ class SimulationControlNode(Node):
 
 def main(args=None):
     rclpy.init(args=args)
-    nodo = SimulationControlNode()
+    nodo = ControlSimNode()
     
     try:
         rclpy.spin(nodo)

@@ -5,10 +5,10 @@ import json
 import threading
 import time
 
-class SimCliNode(Node):
+class interfazTerminalNode(Node):
     """Nodo publicador puro para enviar comandos desde la terminal"""
     def __init__(self):
-        super().__init__('sim_cli_node')
+        super().__init__('interfaz_terminal_node')
         self.pub_mundo = self.create_publisher(String, '/sim_cmd/config_mundo', 10)
         self.pub_fecha = self.create_publisher(String, '/sim_cmd/config_fecha', 10)
         self.pub_paneles = self.create_publisher(String, '/sim_cmd/config_paneles', 10)
@@ -54,27 +54,26 @@ def menu_interactivo(nodo):
         # LA LECTURA POR TECLADO
         opcion = input(" Elige una opción (1-10): ")
 
-        if opcion == '1':
+        if opcion == '1': # Configurar Mundo
             # Si el usuario solo pulsa Enter, coge el valor después del 'or'
             nombre = input("   Nombre del mundo [prueba1]: ") or "prueba1"
             textura = input("   Ruta de textura [none]: ") or "none"
             nodo.publicar_json(nodo.pub_mundo, {"nombre": nombre, "textura": textura})
             print("   [OK] Datos del mundo enviados al Orquestador.")
 
-        elif opcion == '2':
-            # NUEVO BLOQUE: Lectura de Fecha y Hora
+        elif opcion == '2': # Configurar Fecha y Hora
             fecha = input("   Fecha (ej. 10/02/2001) [10/02/2001]: ") or "10/02/2001"
             hora = input("   Hora (ej. 12:34) [12:34]: ") or "12:34"
             nodo.publicar_json(nodo.pub_fecha, {"fecha": fecha, "hora": hora})
             print("   [OK] Datos de fecha y hora enviados al Orquestador.")
 
-        elif opcion == '3':
+        elif opcion == '3': # Configurar Paneles
             ruta = input("   Ruta del CSV [mapa_3.txt]: ") or "Crescent_Dunes.csv"
             modelo = input("   Modelo del panel [panel]: ") or "panel"
             nodo.publicar_json(nodo.pub_paneles, {"ruta_csv": ruta, "modelo": modelo})
             print("   [OK] Datos de paneles enviados al Orquestador.")
 
-        elif opcion == '4':
+        elif opcion == '4': # Configurar Dron
             modelo = input("   Modelo de dron [x500]: ") or "x500"
             try:
                 x = float(input("   Coordenada X (ej. 5.0) [0.0]: ") or "0.0")
@@ -84,7 +83,7 @@ def menu_interactivo(nodo):
             except ValueError:
                 print("   [ERROR] Las coordenadas deben ser números. Inténtelo de nuevo.")
                 
-        elif opcion == '5':
+        elif opcion == '5': # Girar Cámara
             try:
                 grados = float(input("   Ángulo hacia abajo (0=Frente, 90=Suelo) [45]: ") or "45")
                 nodo.publicar_json(nodo.pub_camara, {"angulo": grados})
@@ -92,23 +91,23 @@ def menu_interactivo(nodo):
             except ValueError:
                 print("   [ERROR] Introduce un número válido.")
                 
-        elif opcion == '6':
+        elif opcion == '6': # Accion, Poblar Mundo
             print("\n   >>  Enviando orden de POBLAR...")
             nodo.publicar_accion("POBLAR")
             
-        elif opcion == '7':
+        elif opcion == '7': # Accion, Vaciar Mundo
             print("\n   >>  Enviando orden de VACIAR...")
             nodo.publicar_accion("VACIAR")
             
-        elif opcion == '8':
+        elif opcion == '8': # Accion, Generar Simulacion
             print("\n   >>  Enviando orden de GENERAR...")
             nodo.publicar_accion("GENERAR")
 
-        elif opcion == '9':
+        elif opcion == '9': # Accion, Detener Simulacion
             print("\n   >>  Enviando orden de TERMINAR...")
             nodo.publicar_accion("TERMINAR")
 
-        elif opcion == '10':
+        elif opcion == '10': # Accion, Apagar Todo
             print("\n   >>  Apagando el Orquestador y saliendo...")
             nodo.publicar_accion("SALIR")
             break # Rompe el bucle while y termina este script
@@ -119,9 +118,9 @@ def menu_interactivo(nodo):
 
 def main():
     rclpy.init()
-    nodo = SimCliNode()
+    nodo = interfazTerminalNode()
 
-    # TRUCO DE HILOS: 
+    # SEPARACION EN DOS HILOS: 
     # ROS 2 gira en segundo plano para poder enviar mensajes
     hilo_ros = threading.Thread(target=rclpy.spin, args=(nodo,), daemon=True)
     hilo_ros.start()
