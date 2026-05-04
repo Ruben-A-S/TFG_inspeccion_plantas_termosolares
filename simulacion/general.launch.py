@@ -22,7 +22,7 @@ def generate_launch_description():
         ),
         
         ExecuteProcess(
-            cmd=['gnome-terminal', '--', 'bash', '-c', 'python3 interfaz_feedback_node.py; exec bash'],
+            cmd=['gnome-terminal', '--', 'bash', '-c', 'python3 feedback_monitor_node.py; exec bash'],
             cwd=ruta_scripts_interfaz,
             output='screen'
         ),
@@ -37,37 +37,37 @@ def generate_launch_description():
         
         # 2. Launch simulacion
         ExecuteProcess(
-            cmd=['python3', 'control_sim_node.py'], 
+            cmd=['python3', 'sim_orchestrator_node.py'], 
             cwd=ruta_scripts_simulacion,
             output='screen'
         ),
         ExecuteProcess(
-            cmd=['python3', 'load_map_node.py'], 
+            cmd=['python3', 'map_loader_node.py'], 
             cwd=ruta_scripts_simulacion,
             output='screen'
         ),
         
         # 3. Launch faker
         ExecuteProcess(
-            cmd=['python3', 'calcule_node.py'],
+            cmd=['python3', 'optics_calculator_node.py'],
             cwd=ruta_scripts_faker,
             output='screen'
         ),
         
         ExecuteProcess(
-            cmd=['python3', 'visualize_node.py'],
+            cmd=['python3', 'rviz_visualizer_node.py'],
             cwd=ruta_scripts_faker,
             output='screen'
         ),
         
         ExecuteProcess(
-            cmd=['python3', 'area_camera_node.py'],
+            cmd=['python3', 'virtual_camera_node.py'],
             cwd=ruta_scripts_faker,
             output='screen'
         ),
         
         ExecuteProcess(
-            cmd=['python3', 'show_data_node.py'],
+            cmd=['python3', 'camera_filter_node.py'],
             cwd=ruta_scripts_faker,
             output='screen'
         )
