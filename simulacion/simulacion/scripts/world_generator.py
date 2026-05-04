@@ -1,21 +1,33 @@
+#!/usr/bin/env python3
+"""
+Script generador de mundos base para Gazebo.
+Crea un archivo .sdf con un sol, físicas estándar y un plano con textura PBR.
+"""
+
 import argparse
 import os
 
-def crear_mundo_base(nombre_mundo, ruta_textura, ruta_salida):
+
+def crear_mundo_base(nombre_mundo: str, ruta_textura: str, ruta_salida: str) -> None:
     """
-    Genera un archivo .sdf con un sol, físicas estándar y un plano con textura PBR.
+    Genera un archivo .sdf de Gazebo con configuración básica y una textura de suelo.
+    
+    :param nombre_mundo: Nombre interno del mundo en Gazebo.
+    :param ruta_textura: Ruta a la imagen (jpg/png) que se usará como albedo_map.
+    :param ruta_salida: Ruta completa donde se guardará el archivo .sdf.
     """
     # Verificamos si la textura existe para avisar al usuario
     if not os.path.exists(ruta_textura):
         print(f"[ADVERTENCIA] No se ha encontrado la imagen en: {ruta_textura}")
-        print("Asegúrese de que la ruta sea correcta o Gazebo pintará el suelo de blanco/negro.")
+        print("Asegúrese de que la ruta sea correcta o Gazebo pintará el suelo blanco/negro.")
 
-    # Convertimos la ruta de la imagen a ruta absoluta para que Gazebo siempre la encuentre
+    # Convertimos la ruta de la imagen a ruta absoluta para Gazebo
     textura_absoluta = os.path.abspath(ruta_textura)
 
-    # Plantilla XML/SDF con PBR integrado
-    # Plantilla XML/SDF con PBR integrado Y PLUGINS DE PX4
-    contenido_sdf = f"""﻿<?xml version="1.0" encoding="UTF-8"?>
+    # Plantilla XML/SDF con PBR integrado y plugins base.
+    # (En plantillas de texto multilínea estructuradas se ignora el límite 
+    # de 79 caracteres de PEP 8 para no corromper el formato del XML).
+    contenido_sdf = f"""<?xml version="1.0" encoding="UTF-8"?>
 <sdf version="1.9">
   <world name='{nombre_mundo}'>
     <physics type="ode">
@@ -116,11 +128,14 @@ def crear_mundo_base(nombre_mundo, ruta_textura, ruta_salida):
   </world>
 </sdf>
 """
-    # Crear el directorio de salida si no existe
-    os.makedirs(os.path.dirname(ruta_salida), exist_ok=True)
+    
+    # Crear el directorio de salida si no existe, previniendo errores si solo se pasa un archivo
+    directorio_salida = os.path.dirname(ruta_salida)
+    if directorio_salida:
+        os.makedirs(directorio_salida, exist_ok=True)
 
     # Escribir el archivo final
-    with open(ruta_salida, 'w') as f:
+    with open(ruta_salida, 'w', encoding='utf-8') as f:
         f.write(contenido_sdf)
         
     print(f"[ÉXITO] Mundo '{nombre_mundo}' generado correctamente en: {ruta_salida}")
@@ -130,14 +145,26 @@ if __name__ == "__main__":
     # Configuración de los argumentos por terminal
     parser = argparse.ArgumentParser(description="Generador de mundos base para Gazebo")
     
-    parser.add_argument("--nombre", type=str, required=True, 
-                        help="Nombre del mundo (ej. planta_sevilla)")
+    parser.add_argument(
+        "--nombre", 
+        type=str, 
+        required=True, 
+        help="Nombre del mundo (ej. planta_sevilla)"
+    )
     
-    parser.add_argument("--textura", type=str, required=True, 
-                        help="Ruta a la imagen jpg/png para el suelo")
-                        
-    parser.add_argument("--salida", type=str, required=True, 
-                        help="Ruta y nombre del archivo .sdf a generar")
+    parser.add_argument(
+        "--textura", 
+        type=str, 
+        required=True, 
+        help="Ruta a la imagen jpg/png para el suelo"
+    )
+                    
+    parser.add_argument(
+        "--salida", 
+        type=str, 
+        required=True, 
+        help="Ruta y nombre del archivo .sdf a generar"
+    )
     
     args = parser.parse_args()
     

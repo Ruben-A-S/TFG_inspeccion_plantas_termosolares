@@ -1,13 +1,17 @@
 #!/usr/bin/env python3
 
-import sys
-import subprocess
 import os
+import subprocess
+import sys
 
-def kill_panel(world, nombre):
+
+def _kill_panel(world, nombre):
+    """
+    Función interna que ejecuta un script bash para eliminar un modelo de Gazebo.
+    """
     print(f"Python ordenando eliminar a: {nombre} en el mundo: {world}...")
     
-    # Obtenemos la ruta del script .sh
+    # Obtenemos la ruta absoluta del script .sh
     directorio_actual = os.path.dirname(os.path.abspath(__file__))
     ruta_bash = os.path.join(directorio_actual, "remove_panel.sh")
 
@@ -18,35 +22,37 @@ def kill_panel(world, nombre):
         str(nombre)
     ]
     
-    # Ejecutamos
+    # Ejecutamos capturando la salida para no ensuciar la terminal si no queremos
     resultado = subprocess.run(comando, capture_output=True, text=True)
     
     if resultado.returncode == 0:
-        print(f"  ¡{nombre} eliminado con éxito!")
+        print(f"  [OK] ¡{nombre} eliminado con éxito!")
     else:
-        print(f"  Error al eliminar {nombre}: {resultado.stderr}")
-    
-# --- FUNCIÓN CORREGIDA ---
+        print(f"  [ERROR] Error al eliminar {nombre}: {resultado.stderr}")
+
+
 def eliminar_paneles(nombre_mundo, array_paneles):
     """
-    nombre_mundo: string con el nombre del mundo en Gazebo
-    array_paneles: lista de diccionarios (cada uno con la clave 'id')
+    Recorre una lista de paneles y los elimina uno a uno del entorno de Gazebo.
+    
+    :param nombre_mundo: Cadena con el nombre del mundo en Gazebo.
+    :param array_paneles: Lista de diccionarios, donde cada panel tiene un 'id'.
     """
     for panel in array_paneles:
-        # Extraemos el ID que es lo único que Gazebo necesita para borrar
+        # Extraemos el ID, que es lo único que Gazebo necesita para borrar
         id_panel = panel.get('id')
         
         if id_panel:
-            # CORRECCIÓN: Usamos las variables correctas que recibe la función
-            kill_panel(nombre_mundo, id_panel)
-        
+            _kill_panel(nombre_mundo, id_panel)
+            
     print("[ÉXITO] Eliminación de paneles finalizada.")
     return True
 
-# --- PROTECCIÓN PARA USO EN TERMINAL (Si decides usarlo a mano) ---
+
 if __name__ == "__main__":
+    # --- PROTECCIÓN PARA USO EN TERMINAL INDEPENDIENTE ---
     if len(sys.argv) < 3:
-        print("Uso: python3 Remove_panels_from_file.py <mundo> <nombre_objeto>")
+        print("Uso: python3 panel_remover.py <mundo> <nombre_objeto>")
         sys.exit(1)
         
     world_arg = sys.argv[1]

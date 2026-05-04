@@ -1,14 +1,24 @@
-import rclpy
-from rclpy.node import Node
-from std_msgs.msg import String
 import json
 import threading
 import time
 
-class interfazTerminalNode(Node):
-    """Nodo publicador puro para enviar comandos desde la terminal"""
+import rclpy
+from rclpy.node import Node
+from std_msgs.msg import String
+
+
+class InterfazTerminalNode(Node):
+    """
+    Nodo publicador para enviar comandos desde la terminal.
+    
+    Publica en varios tópicos de '/sim_cmd/' para configurar y controlar
+    la simulación del entorno.
+    """
+
     def __init__(self):
         super().__init__('interfaz_terminal_node')
+        
+        # Publicadores
         self.pub_mundo = self.create_publisher(String, '/sim_cmd/config_mundo', 10)
         self.pub_fecha = self.create_publisher(String, '/sim_cmd/config_fecha', 10)
         self.pub_paneles = self.create_publisher(String, '/sim_cmd/config_paneles', 10)
@@ -17,25 +27,33 @@ class interfazTerminalNode(Node):
         self.pub_camara = self.create_publisher(String, '/sim_cmd/config_camara', 10)
 
     def publicar_json(self, publicador, diccionario):
+        """
+        Convierte un diccionario a JSON y lo publica como String.
+        """
         msg = String()
-        # json.dumps() convierte automáticamente el diccionario en un texto con comillas dobles perfectas
         msg.data = json.dumps(diccionario)
         publicador.publish(msg)
 
     def publicar_accion(self, accion):
+        """
+        Publica una acción en texto plano en el tópico correspondiente.
+        """
         msg = String()
         msg.data = accion
         self.pub_accion.publish(msg)
 
 
 def menu_interactivo(nodo):
-    """Bucle infinito que lee del teclado usando input()"""
-    time.sleep(0.5) # Pequeña pausa para asegurar que ROS 2 conecta
-    
+    """
+    Bucle infinito que lee comandos del teclado usando input()
+    y publica los datos a través del nodo.
+    """
+    time.sleep(0.5)  # Pequeña pausa para asegurar que ROS 2 conecta
+
     while True:
-        print("\n" + "="*45)
+        print("\n" + "=" * 45)
         print("   PANEL DE CONTROL DE SIMULACIÓN ")
-        print("="*45)
+        print("=" * 45)
         print("1.  Configurar Mundo (Nombre y Textura)")
         print("2.  Configurar Fecha y Hora")
         print("3.  Configurar Paneles (Archivo CSV y Modelo)")
@@ -48,32 +66,31 @@ def menu_interactivo(nodo):
         print("-" * 45)
         print("8.  LANZAR SIMULACIÓN (GENERAR)")
         print("9.  Detener Simulación (TERMINAR)")
-        print("10.  Apagar Todo y Salir (SALIR)")
-        print("="*45)
+        print("10. Apagar Todo y Salir (SALIR)")
+        print("=" * 45)
 
-        # LA LECTURA POR TECLADO
         opcion = input(" Elige una opción (1-10): ")
 
-        if opcion == '1': # Configurar Mundo
-            # Si el usuario solo pulsa Enter, coge el valor después del 'or'
+        if opcion == '1':
             nombre = input("   Nombre del mundo [prueba1]: ") or "prueba1"
             textura = input("   Ruta de textura [none]: ") or "none"
             nodo.publicar_json(nodo.pub_mundo, {"nombre": nombre, "textura": textura})
             print("   [OK] Datos del mundo enviados al Orquestador.")
 
-        elif opcion == '2': # Configurar Fecha y Hora
+        elif opcion == '2':
             fecha = input("   Fecha (ej. 10/02/2001) [10/02/2001]: ") or "10/02/2001"
             hora = input("   Hora (ej. 12:34) [12:34]: ") or "12:34"
             nodo.publicar_json(nodo.pub_fecha, {"fecha": fecha, "hora": hora})
             print("   [OK] Datos de fecha y hora enviados al Orquestador.")
 
-        elif opcion == '3': # Configurar Paneles
-            ruta = input("   Ruta del CSV [mapa_3.txt]: ") or "Crescent_Dunes.csv"
+        elif opcion == '3':
+            # He ajustado el placeholder para que coincida con tu valor por defecto
+            ruta = input("   Ruta del CSV [Crescent_Dunes.csv]: ") or "Crescent_Dunes.csv"
             modelo = input("   Modelo del panel [panel]: ") or "panel"
             nodo.publicar_json(nodo.pub_paneles, {"ruta_csv": ruta, "modelo": modelo})
             print("   [OK] Datos de paneles enviados al Orquestador.")
 
-        elif opcion == '4': # Configurar Dron
+        elif opcion == '4':
             modelo = input("   Modelo de dron [x500]: ") or "x500"
             try:
                 x = float(input("   Coordenada X (ej. 5.0) [0.0]: ") or "0.0")
@@ -83,7 +100,7 @@ def menu_interactivo(nodo):
             except ValueError:
                 print("   [ERROR] Las coordenadas deben ser números. Inténtelo de nuevo.")
                 
-        elif opcion == '5': # Girar Cámara
+        elif opcion == '5':
             try:
                 grados = float(input("   Ángulo hacia abajo (0=Frente, 90=Suelo) [45]: ") or "45")
                 nodo.publicar_json(nodo.pub_camara, {"angulo": grados})
@@ -91,36 +108,36 @@ def menu_interactivo(nodo):
             except ValueError:
                 print("   [ERROR] Introduce un número válido.")
                 
-        elif opcion == '6': # Accion, Poblar Mundo
+        elif opcion == '6':
             print("\n   >>  Enviando orden de POBLAR...")
             nodo.publicar_accion("POBLAR")
             
-        elif opcion == '7': # Accion, Vaciar Mundo
+        elif opcion == '7':
             print("\n   >>  Enviando orden de VACIAR...")
             nodo.publicar_accion("VACIAR")
             
-        elif opcion == '8': # Accion, Generar Simulacion
+        elif opcion == '8':
             print("\n   >>  Enviando orden de GENERAR...")
             nodo.publicar_accion("GENERAR")
 
-        elif opcion == '9': # Accion, Detener Simulacion
+        elif opcion == '9':
             print("\n   >>  Enviando orden de TERMINAR...")
             nodo.publicar_accion("TERMINAR")
 
-        elif opcion == '10': # Accion, Apagar Todo
+        elif opcion == '10':
             print("\n   >>  Apagando el Orquestador y saliendo...")
             nodo.publicar_accion("SALIR")
-            break # Rompe el bucle while y termina este script
+            break
         
         else:
             print("   [!] Opción no válida. Escribe un número del 1 al 10.")
 
 
-def main():
-    rclpy.init()
-    nodo = interfazTerminalNode()
+def main(args=None):
+    rclpy.init(args=args)
+    nodo = InterfazTerminalNode()
 
-    # SEPARACION EN DOS HILOS: 
+    # SEPARACION EN DOS HILOS:
     # ROS 2 gira en segundo plano para poder enviar mensajes
     hilo_ros = threading.Thread(target=rclpy.spin, args=(nodo,), daemon=True)
     hilo_ros.start()
@@ -130,10 +147,12 @@ def main():
         menu_interactivo(nodo)
     except KeyboardInterrupt:
         print("\nSaliendo del panel por teclado (Ctrl+C).")
+    finally:
+        # Se asegura de limpiar el nodo y cerrar ROS 2 correctamente al salir
+        nodo.destroy_node()
+        if rclpy.ok():
+            rclpy.shutdown()
 
-    nodo.destroy_node()
-    if rclpy.ok():
-        rclpy.shutdown()
 
 if __name__ == '__main__':
     main()

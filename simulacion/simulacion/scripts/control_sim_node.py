@@ -1,17 +1,27 @@
+import json
+import os
+import subprocess
+import sys
+
 import rclpy
 from rclpy.node import Node
-from std_msgs.msg import String, Float64MultiArray
-import json
-import subprocess
-import os
-import sys
+from std_msgs.msg import Float64MultiArray, String
 
 # Importamos script externo generador de mundos
 from world_generator import crear_mundo_base
 
-class ControlSimNode(Node):
+
+class SimOrchestratorNode(Node):
+    """
+    Nodo Orquestador de la simulación.
+    
+    Se encarga de almacenar la configuración enviada por el usuario,
+    generar el mundo, lanzar PX4 SITL con Gazebo, y enviar las órdenes
+    de carga/descarga de paneles solares a los nodos correspondientes.
+    """
+
     def __init__(self):
-        super().__init__('control_sim_node')
+        super().__init__('sim_orchestrator_node')
 
         # --- ESTADO INTERNO ---
         self.config_fecha = {"fecha": "10/02/2001", "hora": "12:34"}
@@ -24,19 +34,41 @@ class ControlSimNode(Node):
         self.paneles_generados = {"ruta_csv": "mapa_3.txt"} 
         
         # --- PUBLICADORES ---
-        self.pub_gestion_mapa = self.create_publisher(String, '/sim_cmd/gestion_mapa', 10)
-        self.pub_estado = self.create_publisher(String, '/sim_status/estado', 10)
-        self.pub_log = self.create_publisher(String, '/sim_status/log', 10)
-        self.pub_sim_activa = self.create_publisher(String, '/sim_status/sim_activa', 10)
-        self.pub_params_control = self.create_publisher(Float64MultiArray, '/parametros_control', 10)
+        self.pub_gestion_mapa = self.create_publisher(
+            String, '/sim_cmd/gestion_mapa', 10
+        )
+        self.pub_estado = self.create_publisher(
+            String, '/sim_status/estado', 10
+        )
+        self.pub_log = self.create_publisher(
+            String, '/sim_status/log', 10
+        )
+        self.pub_sim_activa = self.create_publisher(
+            String, '/sim_status/sim_activa', 10
+        )
+        self.pub_params_control = self.create_publisher(
+            Float64MultiArray, '/parametros_control', 10
+        )
 
-        # --- SUBSCRIPTORES ---
-        self.create_subscription(String, '/sim_cmd/config_fecha', self.cb_config_fecha, 10)
-        self.create_subscription(String, '/sim_cmd/config_mundo', self.cb_config_mundo, 10)
-        self.create_subscription(String, '/sim_cmd/config_paneles', self.cb_config_paneles, 10)
-        self.create_subscription(String, '/sim_cmd/config_dron', self.cb_config_dron, 10)
-        self.create_subscription(String, '/sim_cmd/accion', self.cb_accion, 10)
-        self.create_subscription(String, '/sim_cmd/config_camara', self.cb_config_camara, 10)
+        # --- SUSCRIPTORES ---
+        self.create_subscription(
+            String, '/sim_cmd/config_fecha', self.config_fecha_callback, 10
+        )
+        self.create_subscription(
+            String, '/sim_cmd/config_mundo', self.config_mundo_callback, 10
+        )
+        self.create_subscription(
+            String, '/sim_cmd/config_paneles', self.config_paneles_callback, 10
+        )
+        self.create_subscription(
+            String, '/sim_cmd/config_dron', self.config_dron_callback, 10
+        )
+        self.create_subscription(
+            String, '/sim_cmd/accion', self.accion_callback, 10
+        )
+        self.create_subscription(
+            String, '/sim_cmd/config_camara', self.config_camara_callback, 10
+        )
 
         self.enviar_log("Nodo Orquestador Iniciado. Esperando configuraciones...")
         self.cambiar_estado("ESPERANDO_DATOS")
@@ -44,54 +76,74 @@ class ControlSimNode(Node):
     # ==========================================
     # CALLBACKS DE RECUPERACIÓN DE DATOS
     # ==========================================
-    def cb_config_fecha(self, msg):
+    
+    def config_fecha_callback(self, msg):
+        """Actualiza la fecha y hora interna."""
         try:
             self.config_fecha = json.loads(msg.data)
-            self.enviar_log(f"Configuración de fecha actualizada: {self.config_fecha.get('fecha')} a las {self.config_fecha.get('hora')}")
+            fecha = self.config_fecha.get('fecha')
+            hora = self.config_fecha.get('hora')
+            self.enviar_log(f"Configuración de fecha actualizada: {fecha} a las {hora}")
         except json.JSONDecodeError:
             self.enviar_log("ERROR: JSON de fecha inválida.")
             
-    def cb_config_mundo(self, msg):
+    def config_mundo_callback(self, msg):
+        """Actualiza el nombre y textura del mundo a generar."""
         try:
             self.config_mundo = json.loads(msg.data)
-            self.enviar_log(f"Configuración de mundo actualizada: {self.config_mundo.get('nombre')} (textura: {self.config_mundo.get('textura')})")
+            nombre = self.config_mundo.get('nombre')
+            textura = self.config_mundo.get('textura')
+            self.enviar_log(f"Configuración de mundo actualizada: {nombre} (textura: {textura})")
         except json.JSONDecodeError:
             self.enviar_log("ERROR: JSON de mundo inválido.")
 
-    def cb_config_paneles(self, msg):
+    def config_paneles_callback(self, msg):
+        """Actualiza la configuración de generación de paneles."""
         try:
             self.config_paneles = json.loads(msg.data)
-            self.enviar_log(f"Configuración de paneles actualizada: {self.config_paneles.get('ruta_csv')} (modelo: {self.config_paneles.get('modelo')})")
+            ruta = self.config_paneles.get('ruta_csv')
+            modelo = self.config_paneles.get('modelo')
+            self.enviar_log(f"Configuración de paneles actualizada: {ruta} (modelo: {modelo})")
         except json.JSONDecodeError:
             self.enviar_log("ERROR: JSON de paneles inválido.")
 
-    def cb_config_dron(self, msg):
+    def config_dron_callback(self, msg):
+        """Actualiza el modelo de dron y su posición de despegue."""
         try:
             self.config_dron = json.loads(msg.data)
-            self.enviar_log(f"Configuración de dron actualizada: {self.config_dron.get('modelo')} en X={self.config_dron.get('x')}, Y={self.config_dron.get('y')}")
+            modelo = self.config_dron.get('modelo')
+            pos_x = self.config_dron.get('x')
+            pos_y = self.config_dron.get('y')
+            self.enviar_log(f"Configuración de dron actualizada: {modelo} en X={pos_x}, Y={pos_y}")
         except json.JSONDecodeError:
             self.enviar_log("ERROR: JSON de dron inválido.")
     
-    def cb_config_camara(self, msg):
+    def config_camara_callback(self, msg):
+        """Actualiza el pitch de la cámara del dron."""
         try:
             datos = json.loads(msg.data)
             grados = datos.get("angulo", 45.0)
+            
             # Convertimos a radianes aquí para que la calculadora reciba el dato listo
             radianes = grados * (3.14159265 / 180.0)
+            
             # Preparamos el mensaje para la calculadora (Float64MultiArray)
-            from std_msgs.msg import Float64MultiArray
             msg_control = Float64MultiArray()
             # [Angulo, Focal (por defecto 1.5), Distorsión (0.0)]
             msg_control.data = [float(radianes), 1.5, 0.0]        
             self.pub_params_control.publish(msg_control)
+            
             self.enviar_log(f"Cámara movida a {grados} grados ({radianes:.3f} rad)")
+            
         except Exception as e:
             self.enviar_log(f"ERROR al procesar ángulo de cámara: {e}")
             
     # ==========================================
     # CALLBACK DE ACCIONES PRINCIPALES
     # ==========================================
-    def cb_accion(self, msg):
+    
+    def accion_callback(self, msg):
+        """Recibe una orden de acción principal (GENERAR, POBLAR, etc.)."""
         orden = msg.data.upper()
         
         if orden == "GENERAR":
@@ -112,18 +164,26 @@ class ControlSimNode(Node):
     # ==========================================
     # LÓGICA DE NEGOCIO (Los "Músculos")
     # ==========================================
+    
     def ejecutar_generacion_total(self):
+        """Inicia Gazebo y PX4 SITL con las configuraciones actuales."""
         if self.proceso_simulacion is not None:
-            self.enviar_log("ADVERTENCIA: La simulación ya está corriendo. Cierra la actual (Opción 9) antes de generar otra.")
+            self.enviar_log(
+                "ADVERTENCIA: La simulación ya está corriendo. "
+                "Cierra la actual (Opción 9) antes de generar otra."
+            )
             return
+            
         self.cambiar_estado("ARRANCANDO_SIMULACION")
         self.enviar_log("Fase 1: Preparando mundo virtual...")
         
         nombre_mundo = self.config_mundo.get('nombre', 'prueba1')
         nombre_textura = self.config_mundo.get('textura', 'arenosillo.png')
         
-        ruta_mundo_original = os.path.expanduser(f"~/Carpeta_TFG_Provisional/src/TFG_inspeccion_plantas_termosolares/simulacion/simulacion/worlds/{nombre_mundo}.sdf")
-        ruta_textura = os.path.expanduser(f"~/Carpeta_TFG_Provisional/src/TFG_inspeccion_plantas_termosolares/simulacion/simulacion/models/textures/{nombre_textura}")
+        # Rutas hardcodeadas (se podrían extraer a parámetros de ROS 2 en el futuro)
+        base_dir = os.path.expanduser("~/Carpeta_TFG_Provisional/src/TFG_inspeccion_plantas_termosolares")
+        ruta_mundo_original = os.path.join(base_dir, "simulacion/simulacion/worlds", f"{nombre_mundo}.sdf")
+        ruta_textura = os.path.join(base_dir, "simulacion/simulacion/models/textures", nombre_textura)
         
         try:
             crear_mundo_base(nombre_mundo, ruta_textura, ruta_mundo_original)
@@ -135,14 +195,14 @@ class ControlSimNode(Node):
         self.enviar_log("Fase 2: Preparando rutas para PX4...")
         
         modelo_dron = self.config_dron.get('modelo', 'x500')
-        pos_x = self.config_dron.get('x', '0.0')
-        pos_y = self.config_dron.get('y', '0.0')
+        pos_x = self.config_dron.get('x', 0.0)
+        pos_y = self.config_dron.get('y', 0.0)
 
         ruta_px4_worlds = os.path.expanduser("~/PX4-Autopilot/Tools/simulation/gz/worlds")
         ruta_mundo_destino = os.path.join(ruta_px4_worlds, f"{nombre_mundo}.sdf")
 
         if os.path.exists(ruta_mundo_original):
-            self.enviar_log(f"Copiando mundo a entorno PX4...")
+            self.enviar_log("Copiando mundo a entorno PX4...")
             subprocess.run(f"cp {ruta_mundo_original} {ruta_mundo_destino}", shell=True)
         else:
             self.enviar_log(f"ADVERTENCIA: No se encontró el archivo {ruta_mundo_original}.")
@@ -153,8 +213,10 @@ class ControlSimNode(Node):
             f"cd ~/PX4-Autopilot && make px4_sitl gz_{modelo_dron}"
         )
         
-        self.enviar_log(f"Fase 3: Lanzando simulación...")
-        self.proceso_simulacion = subprocess.Popen(comando, shell=True, executable='/bin/bash')
+        self.enviar_log("Fase 3: Lanzando simulación...")
+        self.proceso_simulacion = subprocess.Popen(
+            comando, shell=True, executable='/bin/bash'
+        )
         
         self.cambiar_estado("SIMULACION_CORRIENDO")
         self.mundo_generado = {"nombre": nombre_mundo}
@@ -168,7 +230,9 @@ class ControlSimNode(Node):
         self.pub_sim_activa.publish(msg_activa)
         
     def cerrar_simulacion(self):
+        """Mata los procesos de Gazebo y PX4."""
         self.enviar_log("Cerrando simulador y limpiando procesos de Linux...")
+        # Usa stderr=subprocess.DEVNULL para ocultar errores si no hay procesos que matar
         subprocess.run("killall -9 ruby px4 gz", shell=True, stderr=subprocess.DEVNULL)
         self.proceso_simulacion = None
         self.cambiar_estado("ESPERANDO_DATOS")
@@ -177,7 +241,9 @@ class ControlSimNode(Node):
     # ==========================================
     # GESTIÓN DE PANELES
     # ==========================================
+    
     def inyectar_obstaculos(self):
+        """Pide al nodo de carga de mapas que inserte los paneles solares."""
         fecha_mundo = self.config_fecha.get('fecha', '10/02/2001')
         hora_mundo = self.config_fecha.get('hora', '12:34')
         nombre_csv = self.config_paneles.get('ruta_csv', 'mapa_3.txt')
@@ -205,6 +271,7 @@ class ControlSimNode(Node):
         self.enviar_log(f"Orden enviada a load_map para poblar '{nombre_mundo}' con '{nombre_csv}'.")
         
     def eliminar_obstaculos(self):
+        """Pide al nodo de carga de mapas que elimine los paneles solares."""
         nombre_csv = self.paneles_generados.get('ruta_csv', 'mapa_3.txt')
         nombre_mundo = self.mundo_generado.get('nombre', 'prueba1')
 
@@ -217,26 +284,31 @@ class ControlSimNode(Node):
         msg = String()
         msg.data = json.dumps(orden)
         self.pub_gestion_mapa.publish(msg)
+        
         self.enviar_log(f"Orden enviada a load_map para vaciar el mapa '{nombre_csv}'.")
         self.paneles_generados = {}
 
     # ==========================================
     # UTILIDADES
     # ==========================================
+    
     def enviar_log(self, texto):
+        """Publica un mensaje en el tópico de logs y lo imprime localmente."""
         msg = String()
         msg.data = texto
         self.pub_log.publish(msg)
         self.get_logger().info(texto)
 
     def cambiar_estado(self, nuevo_estado):
+        """Actualiza el estado global de la simulación."""
         msg = String()
         msg.data = nuevo_estado
         self.pub_estado.publish(msg)
 
+
 def main(args=None):
     rclpy.init(args=args)
-    nodo = ControlSimNode()
+    nodo = SimOrchestratorNode()
     
     try:
         rclpy.spin(nodo)
@@ -248,6 +320,7 @@ def main(args=None):
         nodo.destroy_node()
         if rclpy.ok():
             rclpy.shutdown()
+
 
 if __name__ == '__main__':
     main()
