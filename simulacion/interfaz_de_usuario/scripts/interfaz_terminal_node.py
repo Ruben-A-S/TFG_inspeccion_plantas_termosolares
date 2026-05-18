@@ -19,13 +19,14 @@ class InterfazTerminalNode(Node):
         super().__init__('interfaz_terminal_node')
         
         # Publicadores
-        self.pub_mundo = self.create_publisher(String, '/sim_cmd/config_mundo', 10)
-        self.pub_fecha = self.create_publisher(String, '/sim_cmd/config_fecha', 10)
-        self.pub_paneles = self.create_publisher(String, '/sim_cmd/config_paneles', 10)
-        self.pub_dron = self.create_publisher(String, '/sim_cmd/config_dron', 10)
-        self.pub_accion = self.create_publisher(String, '/sim_cmd/accion', 10)
-        self.pub_camara = self.create_publisher(String, '/sim_cmd/config_camara', 10)
-
+        self.pub_mundo = self.create_publisher(String, '/sim_cmd/world_config', 10)
+        self.pub_fecha = self.create_publisher(String, '/sim_cmd/date_config', 10)
+        self.pub_paneles = self.create_publisher(String, '/sim_cmd/panel_config', 10)
+        self.pub_dron = self.create_publisher(String, '/sim_cmd/drone_config', 10)
+        self.pub_accion = self.create_publisher(String, '/sim_cmd/action', 10)
+        self.pub_camara = self.create_publisher(String, '/sim_cmd/rotate_camera', 10)
+        self.pub_giro_panel =self.create_publisher(String, '/sim_cmd/rotate_panel', 10)
+ 
     def publicar_json(self, publicador, diccionario):
         """
         Convierte un diccionario a JSON y lo publica como String.
@@ -60,16 +61,17 @@ def menu_interactivo(nodo):
         print("4.  Configurar Dron (Modelo y Posición)")
         print("-" * 45)
         print("5.  Girar Camara en vivo (Grados)")
+        print("6.  Girar Paneles en vivo (Grados)")
         print("-" * 45)        
-        print("6.  Poblar mundo")
-        print("7.  Vaciar mundo")
+        print("7.  Poblar mundo")
+        print("8.  Vaciar mundo")
         print("-" * 45)
-        print("8.  LANZAR SIMULACIÓN (GENERAR)")
-        print("9.  Detener Simulación (TERMINAR)")
-        print("10. Apagar Todo y Salir (SALIR)")
+        print("9.  LANZAR SIMULACIÓN (GENERAR)")
+        print("10.  Detener Simulación (TERMINAR)")
+        print("11. Apagar Todo y Salir (SALIR)")
         print("=" * 45)
 
-        opcion = input(" Elige una opción (1-10): ")
+        opcion = input(" Elige una opción (1-11): ")
 
         if opcion == '1':
             nombre = input("   Nombre del mundo [prueba1]: ") or "prueba1"
@@ -84,7 +86,6 @@ def menu_interactivo(nodo):
             print("   [OK] Datos de fecha y hora enviados al Orquestador.")
 
         elif opcion == '3':
-            # He ajustado el placeholder para que coincida con tu valor por defecto
             ruta = input("   Ruta del CSV [Crescent_Dunes.csv]: ") or "Crescent_Dunes.csv"
             modelo = input("   Modelo del panel [panel]: ") or "panel"
             nodo.publicar_json(nodo.pub_paneles, {"ruta_csv": ruta, "modelo": modelo})
@@ -109,28 +110,38 @@ def menu_interactivo(nodo):
                 print("   [ERROR] Introduce un número válido.")
                 
         elif opcion == '6':
+            try:
+                id_panel = (input("   Id del panel a girar [panel_0]: ") or "panel_0")
+                angulo_yaw = float(input("   incremento de yaw [0.0]: ") or "0.0")
+                angulo_pitch = float(input("   incremento de pitch [0.0]: ") or "0.0")
+                nodo.publicar_json(nodo.pub_giro_panel, {"id_panel": id_panel, "yaw_inc": angulo_yaw, "pitch_inc": angulo_pitch})
+                print(f"   [OK] Orden a {id_panel} de giro yaw += {angulo_yaw}° y pitch += {angulo_pitch}º enviada.")
+            except ValueError:
+                print("   [ERROR] Introduce un id de panel y valores numéricos de ángulos válidos.")
+                
+        elif opcion == '7':
             print("\n   >>  Enviando orden de POBLAR...")
             nodo.publicar_accion("POBLAR")
             
-        elif opcion == '7':
+        elif opcion == '8':
             print("\n   >>  Enviando orden de VACIAR...")
             nodo.publicar_accion("VACIAR")
             
-        elif opcion == '8':
+        elif opcion == '9':
             print("\n   >>  Enviando orden de GENERAR...")
             nodo.publicar_accion("GENERAR")
 
-        elif opcion == '9':
+        elif opcion == '10':
             print("\n   >>  Enviando orden de TERMINAR...")
             nodo.publicar_accion("TERMINAR")
 
-        elif opcion == '10':
+        elif opcion == '11':
             print("\n   >>  Apagando el Orquestador y saliendo...")
             nodo.publicar_accion("SALIR")
             break
         
         else:
-            print("   [!] Opción no válida. Escribe un número del 1 al 10.")
+            print("   [!] Opción no válida. Escribe un número del 1 al 11.")
 
 
 def main(args=None):

@@ -34,41 +34,33 @@ class SimOrchestratorNode(Node):
         self.paneles_generados = {"ruta_csv": "mapa_3.txt"} 
         
         # --- PUBLICADORES ---
-        self.pub_gestion_mapa = self.create_publisher(
-            String, '/sim_cmd/gestion_mapa', 10
-        )
-        self.pub_estado = self.create_publisher(
-            String, '/sim_status/estado', 10
-        )
-        self.pub_log = self.create_publisher(
-            String, '/sim_status/log', 10
-        )
-        self.pub_sim_activa = self.create_publisher(
-            String, '/sim_status/sim_activa', 10
-        )
-        self.pub_params_control = self.create_publisher(
-            Float64MultiArray, '/parametros_control', 10
-        )
+        self.pub_gestion_mapa = self.create_publisher(String, '/sim_cmd/map_management', 10)
+        
+        self.pub_estado = self.create_publisher(String, 
+            '/sim_status/state', 10)
+        
+        self.pub_log = self.create_publisher(String, 
+            '/sim_status/log', 10)
+        
+        self.pub_sim_activa = self.create_publisher(String, 
+            '/sim_status/active_sim', 10)
+        
+        self.pub_params_control = self.create_publisher(Float64MultiArray, '/control_param', 10)
 
         # --- SUSCRIPTORES ---
-        self.create_subscription(
-            String, '/sim_cmd/config_fecha', self.config_fecha_callback, 10
-        )
-        self.create_subscription(
-            String, '/sim_cmd/config_mundo', self.config_mundo_callback, 10
-        )
-        self.create_subscription(
-            String, '/sim_cmd/config_paneles', self.config_paneles_callback, 10
-        )
-        self.create_subscription(
-            String, '/sim_cmd/config_dron', self.config_dron_callback, 10
-        )
-        self.create_subscription(
-            String, '/sim_cmd/accion', self.accion_callback, 10
-        )
-        self.create_subscription(
-            String, '/sim_cmd/config_camara', self.config_camara_callback, 10
-        )
+        self.create_subscription(String, '/sim_cmd/date_config', self.config_fecha_callback, 10)
+        
+        self.create_subscription(String, '/sim_cmd/world_config', self.config_mundo_callback, 10)
+        
+        self.create_subscription(String, '/sim_cmd/panel_config', self.config_paneles_callback, 10)
+        
+        self.create_subscription(String, '/sim_cmd/drone_config', self.config_dron_callback, 10)
+        
+        self.create_subscription(String, '/sim_cmd/action', self.accion_callback, 10)
+        
+        self.create_subscription(String, '/sim_cmd/rotate_camera', self.rotate_camera_callback, 10)
+        
+        self.create_subscription(String, '/sim_cmd/rotate_panel', self.rotate_panel_callback, 10)
 
         self.enviar_log("Nodo Orquestador Iniciado. Esperando configuraciones...")
         self.cambiar_estado("ESPERANDO_DATOS")
@@ -118,7 +110,7 @@ class SimOrchestratorNode(Node):
         except json.JSONDecodeError:
             self.enviar_log("ERROR: JSON de dron inválido.")
     
-    def config_camara_callback(self, msg):
+    def rotate_camera_callback(self, msg):
         """Actualiza el pitch de la cámara del dron."""
         try:
             datos = json.loads(msg.data)
@@ -137,6 +129,24 @@ class SimOrchestratorNode(Node):
             
         except Exception as e:
             self.enviar_log(f"ERROR al procesar ángulo de cámara: {e}")
+    
+    def rotate_panel_callback(self, msg):
+        """Escucha el comando de girar panel para registrarlo en el log global."""
+        try:
+            datos = json.loads(msg.data)
+            # Asegúrate de poner "panel_0" con comillas para que sea un string por defecto
+            id_panel = datos.get("id_panel", "panel_0") 
+            yaw_inc_grados = datos.get("yaw_inc", 0.0)
+            pitch_inc_grados = datos.get("pitch_inc", 0.0)
+            
+            # Solo informamos. El map_manager_node es quien realmente hará el trabajo.
+            self.enviar_log(
+                f"Orden recibida: Girar {id_panel} (Yaw: +{yaw_inc_grados}º, Pitch: +{pitch_inc_grados}º). "
+                f"Delegando ejecución al Gestor de Mapa."
+            )
+            
+        except Exception as e:
+            self.enviar_log(f"ERROR al procesar giro de panel en el Orquestador: {e}")
             
     # ==========================================
     # CALLBACK DE ACCIONES PRINCIPALES

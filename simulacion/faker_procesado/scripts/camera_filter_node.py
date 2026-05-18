@@ -1,185 +1,102 @@
 #!/usr/bin/env python3
 
 import json
-
 import numpy as np
 import rclpy
-from geometry_msgs.msg import PoseStamped
 from rclpy.node import Node
 from scipy.spatial.transform import Rotation as R
 from std_msgs.msg import String
-
+from geometry_msgs.msg import PoseStamped
 
 class CameraFilterNode(Node):
     """
-    Nodo encargado de filtrar los datos matemáticos crudos.
-    
-    Comprueba si los rebotes teóricos calculados caen dentro del campo 
-    de visión de la cámara virtual. Si es así, publica los datos para 
-    su procesamiento final y avisa por la terminal de logs.
+    Nodo de Filtrado: Actúa como el 'trigger' de inspección.
+    Si un impacto es visible por la cámara, lo envía al cerebro.
     """
 
     def __init__(self):
         super().__init__('camera_filter_node')
         
-        # Almacenamiento de estado
-        self.dron_pose = None
+        # Parámetros de cámara (Deben coincidir con VirtualCameraNode)
+        self.focal_dist = 1.5
+        self.sensor_w, self.sensor_h = 1.6, 1.2
+        self.res_w, self.res_h = 640, 480
+
         self.cam_pose = None
-        
-        # Contador para no saturar la terminal propia
-        self.contador_frames = 0
-
-        # --- PUBLICADORES ---
-        self.pub_feedback = self.create_publisher(
-            String, '/sim_status/log', 10
-        )
-        self.pub_datos_normales = self.create_publisher(
-            String, '/inspeccion/datos_filtrados', 10
-        )
-
-        # --- PARÁMETROS DE LA CÁMARA ---
-        self.focal_dist = 1.5  
-        self.sensor_w = 1.6    
-        self.sensor_h = 1.2    
-        self.res_w = 640       
-        self.res_h = 480       
 
         # --- SUSCRIPCIONES ---
-        self.create_subscription(
-            PoseStamped, '/datos/dron', self.dron_callback, 10
-        )
-        self.create_subscription(
-            PoseStamped, '/datos/camara', self.camara_callback, 10
-        )
-        self.create_subscription(
-            String, '/inspeccion/datos_crudos', self.datos_crudos_callback, 10
-        )
+        self.create_subscription(PoseStamped, '/data/camera', self.camara_callback, 10)
+        self.create_subscription(String, '/inspection/raw_data', self.datos_crudos_callback, 10)
 
-    # ==========================================
-    # CALLBACKS DE GUARDADO DE ESTADO
-    # ==========================================
+        # --- PUBLICADORES ---
+        self.pub_filtered = self.create_publisher(String, '/inspection/filtered_data', 10)
+        self.pub_log = self.create_publisher(String, '/sim_status/log', 10)
 
-    def dron_callback(self, msg): 
-        self.dron_pose = msg
+        self.get_logger().info("Filtro de Cámara activo. Esperando detecciones...")
 
-    def camara_callback(self, msg): 
+    def camara_callback(self, msg):
         self.cam_pose = msg
-
-    # ==========================================
-    # LÓGICA DE FILTRADO
-    # ==========================================
-
-    def rebote_es_visible(self, p_mundo, p_cam, r_cam_matrix):
-        """
-        Aplica el modelo de cámara estenopeica para saber si 
-        un punto 3D cae dentro del sensor de imagen 2D.
-        """
-        r_inv = r_cam_matrix.T
-        p_c = r_inv @ (p_mundo - p_cam)
-        
-        profundidad = p_c[0]
-
-        if profundidad <= 0.1:
-            return False
-
-        y_proj = -self.focal_dist * (p_c[1] / profundidad)
-        z_proj = -self.focal_dist * (p_c[2] / profundidad)
-
-        pixel_u = int(((y_proj / self.sensor_w) + 0.5) * self.res_w)
-        pixel_v = int(((z_proj / self.sensor_h) + 0.5) * self.res_h)
-
-        return (0 <= pixel_u < self.res_w) and (0 <= pixel_v < self.res_h)
 
     def datos_crudos_callback(self, msg):
         """
-        Recibe los cálculos brutos de todos los paneles, filtra los que no
-        están en cámara, y re-publica solo los válidos.
+        Recibe los impactos calculados por el Faker.
+        Usa la pose de la cámara para filtrar cuáles son visibles.
         """
-        if not self.cam_pose or not self.dron_pose: 
-            return
+        if not self.cam_pose: return
 
         try:
-            datos_crudos = json.loads(msg.data)
-        except json.JSONDecodeError:
+            impactos_raw = json.loads(msg.data)
+        except:
             return
 
-        # Preparamos las variables de la cámara
-        c_pos = np.array([
-            self.cam_pose.pose.position.x, 
-            self.cam_pose.pose.position.y, 
-            self.cam_pose.pose.position.z
-        ])
+        visibles = []
         
-        c_quat = [
-            self.cam_pose.pose.orientation.x, 
-            self.cam_pose.pose.orientation.y, 
-            self.cam_pose.pose.orientation.z, 
-            self.cam_pose.pose.orientation.w
-        ]
-        r_cam_matrix = R.from_quat(c_quat).as_matrix()
+        # Extraer matrices de cámara una sola vez por frame
+        p_c = np.array([self.cam_pose.pose.position.x, self.cam_pose.pose.position.y, self.cam_pose.pose.position.z])
+        r_c_mat = R.from_quat([self.cam_pose.pose.orientation.x, self.cam_pose.pose.orientation.y, 
+                               self.cam_pose.pose.orientation.z, self.cam_pose.pose.orientation.w]).as_matrix()
 
-        paneles_visibles = []
-        rebotes_en_camara = 0
-        log_text = ""
+        for imp in impactos_raw:
+            # IMPORTANTE: El Faker ahora nos da el impacto en coordenadas MUNDO para facilitar esto
+            # o podemos usar la pose del panel que el Faker también conoce.
+            # Suponiendo que el Faker envía 'rebote_world'
+            p_w = np.array(imp.get('rebote_world_debug', [0,0,0]))
+            
+            if self.punto_en_fov(p_w, p_c, r_c_mat):
+                visibles.append(imp)
 
-        # Un solo bucle para todo
-        for dato in datos_crudos:
-            p_rebote_local = np.array(dato["rebote_local"])
-            pos_panel = np.array(dato["pose_panel"]["pos"])
-            rot_panel = R.from_quat(dato["pose_panel"]["quat"])
-            
-            # Pasamos a coordenadas globales para comprobar si la cámara lo ve
-            p_rebote_global = pos_panel + rot_panel.apply(p_rebote_local)
-            
-            # Pasamos el filtro mágico usando las coordenadas globales
-            if self.rebote_es_visible(p_rebote_global, c_pos, r_cam_matrix):
-                # Guardamos el dato original intacto (con sus coordenadas locales)
-                paneles_visibles.append(dato) 
-                rebotes_en_camara += 1
-                
-                # Usamos las locales para el log, para saber dónde está en el panel
-                log_text += (
-                    f" | {dato['id_panel']} XYZ:"
-                    f"({p_rebote_local[0]:.1f}, {p_rebote_local[1]:.1f}, "
-                    f"{p_rebote_local[2]:.1f})"
-                )
-
-        # Lógica de publicación unificada
-        self.contador_frames += 1
-
-        if rebotes_en_camara > 0:
-            # 1. Log en consola propia
-            self.get_logger().info(
-                f"¡DESTELLO EN CÁMARA! -> {rebotes_en_camara} paneles detectados."
-            )
-            
-            # 2. Aviso al nodo de feedback (Cliente/Servidor)
-            msg_f = String()
-            msg_f.data = f"¡DESTELLO DETECTADO! Impactos: {rebotes_en_camara} {log_text}"
-            self.pub_feedback.publish(msg_f)
-            
-            # 3. Envío de datos filtrados para el cálculo final
+        if visibles:
+            # Enviar al Cerebro
             msg_final = String()
-            msg_final.data = json.dumps(paneles_visibles)
-            self.pub_datos_normales.publish(msg_final)
+            msg_final.data = json.dumps(visibles)
+            self.pub_filtered.publish(msg_final)
+            
+            # Log de sistema
+            log = String()
+            log.data = f"[FILTER] {len(visibles)} impactos detectados en FOV."
+            self.pub_log.publish(log)
 
-        elif self.contador_frames % 30 == 0:
-            self.get_logger().info("[Analizando]... Ningún láser en el campo de visión.")
+    def punto_en_fov(self, p_mundo, p_cam, r_cam_matrix):
+        """Modelo estenopeico para validación de visibilidad."""
+        p_c = r_cam_matrix.T @ (p_mundo - p_cam)
+        
+        if p_c[0] <= 0.1: return False # Detrás de la cámara
+        
+        # Proyección
+        y_p = -self.focal_dist * (p_c[1] / p_c[0])
+        z_p = -self.focal_dist * (p_c[2] / p_c[0])
 
+        # Mapeo a píxeles
+        u = int(((y_p / self.sensor_w) + 0.5) * self.res_w)
+        v = int(((z_p / self.sensor_h) + 0.5) * self.res_h)
+
+        return (0 <= u < self.res_w) and (0 <= v < self.res_h)
 
 def main(args=None):
     rclpy.init(args=args)
     nodo = CameraFilterNode()
-    
-    try: 
-        rclpy.spin(nodo)
-    except KeyboardInterrupt: 
-        pass
-    finally:
-        nodo.destroy_node()
-        if rclpy.ok():
-            rclpy.shutdown()
-
+    rclpy.spin(nodo)
+    rclpy.shutdown()
 
 if __name__ == "__main__":
     main()

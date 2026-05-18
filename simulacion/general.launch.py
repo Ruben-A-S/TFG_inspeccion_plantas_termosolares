@@ -13,6 +13,8 @@ def generate_launch_description():
     
     ruta_scripts_faker = '/home/ruben/Carpeta_TFG_Provisional/src/TFG_inspeccion_plantas_termosolares/simulacion/faker_procesado/scripts'
     
+    ruta_scripts_calculo = '/home/ruben/Carpeta_TFG_Provisional/src/TFG_inspeccion_plantas_termosolares/simulacion/metodo_de_calculo/scripts'
+    
     return LaunchDescription([
         # 1. Launch interfaz
         ExecuteProcess(
@@ -70,5 +72,17 @@ def generate_launch_description():
             cmd=['python3', 'camera_filter_node.py'],
             cwd=ruta_scripts_faker,
             output='screen'
-        )
+        ),
+        
+        ExecuteProcess(
+            cmd=['python3', 'heliopoint_calibration_node.py'],
+            cwd=ruta_scripts_calculo,
+            output='screen'
+        ),
+        
+        ExecuteProcess(
+            cmd=['python3', 'rviz_helio_markers_node.py'],
+            cwd=ruta_scripts_calculo,
+            output='screen'
+        )                
     ])

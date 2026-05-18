@@ -1,242 +1,190 @@
+#!/usr/bin/env python3
+
 import csv
 import json
 import os
-
+import math
 import numpy as np
 import rclpy
 from rclpy.node import Node
 from std_msgs.msg import String
+from std_srvs.srv import Trigger
 
-# Importamos tus scripts externos (Nota: considera renombrar los archivos a snake_case)
-from Add_panels_from_file import inyectar_paneles
-from Remove_panels_from_file import eliminar_paneles
-
+# Scripts externos de inyección
+try:
+    from Add_panels_from_file import inyectar_paneles
+    from Remove_panels_from_file import eliminar_paneles
+except ImportError:
+    def inyectar_paneles(m, p, mod): pass
+    def eliminar_paneles(m, p): pass
 
 # ==========================================
-# FUNCIONES MATEMÁTICAS EXTERNAS
+# FUNCIONES MATEMÁTICAS
 # ==========================================
 
 def obtener_sol_inventado(fecha, hora):
-    """
-    Sol de mentira (Mock). Devuelve unas coordenadas X, Y, Z estáticas.
-    Cuando sepas cómo calcularlo, metes tu lógica aquí.
-    """
     return [1000.0, 100.0, 500.0]
 
-
-def calcular_orientacion_heliostato(pos_panel, pos_torre, posicion_sol):
-    """
-    Calcula los ángulos Yaw y Pitch para un helióstato usando Álgebra Vectorial.
-    """
-    # 1. Vector hacia el Sol (S)
-    vector_s = np.array(posicion_sol) - np.array(pos_panel)
-    vector_s = vector_s / np.linalg.norm(vector_s)
-    
-    # 2. Vector hacia la Torre (T)
-    vector_t = np.array(pos_torre) - np.array(pos_panel)
-    vector_t = vector_t / np.linalg.norm(vector_t)
-    
-    # 3. Vector Normal (N) (La bisectriz)
-    vector_n = vector_s + vector_t
-    vector_n = vector_n / np.linalg.norm(vector_n)
-    
-    # 4. Convertir a ángulos para Gazebo (Yaw, Pitch)
-    yaw = np.arctan2(vector_n[1], vector_n[0])
-    pitch = np.arcsin(vector_n[2])
-    
+def calcular_orientacion_heliostato(p_c, p_aim, p_s):
+    v_dl = -np.array(p_s) + np.array(p_c)
+    d_dl = v_dl / np.linalg.norm(v_dl)
+    v_rl = np.array(p_aim) - np.array(p_c)
+    d_rl = v_rl / np.linalg.norm(v_rl)
+    n = d_rl - d_dl
+    n = n / np.linalg.norm(n)
+    yaw = np.arctan2(n[1], n[0])
+    pitch = np.arcsin(n[2])
     return float(yaw), float(pitch)
 
-
 # ==========================================
-# CLASE DEL NODO ROS 2
+# NODO MAP_LOADER_NODE
 # ==========================================
 
 class MapLoaderNode(Node):
-    """
-    Nodo encargado de cargar y vaciar el mapa de la simulación.
-    
-    Lee un archivo CSV con las posiciones de los helióstatos, calcula
-    sus orientaciones hacia la torre y el sol, e inyecta los modelos en Gazebo.
-    """
-
     def __init__(self):
         super().__init__('map_loader_node')
 
-        self.array_paneles = []
+        self.paneles_teoria = []   
+        self.paneles_realidad = [] 
         
-        # --- SUSCRIPTOR ---
-        self.create_subscription(
-            String, '/sim_cmd/gestion_mapa', self.gestion_mapa_callback, 10
-        )
+        self.mundo_actual = "prueba1"
+        self.modelo_actual = "panel"
+
+        # --- SUSCRIPTORES ---
+        self.create_subscription(String, '/sim_cmd/map_management', self.gestion_mapa_callback, 10)
+        
+        # IMPORTANTE: Escuchamos el tópico con la estructura que me has pasado
+        self.create_subscription(String, '/sim_cmd/rotate_panel', self.rotate_panel_callback, 10)
 
         # --- PUBLICADORES ---
-        self.pub_log = self.create_publisher(
-            String, '/sim_status/log', 10
-        )
-        self.pub_paneles = self.create_publisher(
-            String, '/sim_data/paneles_info', 100
-        )
-
-        # --- TEMPORIZADOR ---
-        self.timer = self.create_timer(2.0, self.timer_callback)
-
-        self.enviar_log("Nodo Map Loader iniciado. Esperando órdenes...")
+        self.pub_log = self.create_publisher(String, '/sim_status/log', 10)
+        self.pub_updates = self.create_publisher(String, '/sim_status/panel_updates', 10)
         
-    def timer_callback(self):
-        """Publica el estado actual del mapa periódicamente."""
-        msg = String()
-        # Si está vacío, enviará '[]', avisando que no hay nada
-        msg.data = json.dumps(self.array_paneles)
-        self.pub_paneles.publish(msg)
+        # --- SERVICIOS ---
+        self.srv_teoria = self.create_service(Trigger, 'get_panel_theory', self.get_panel_theory_callback)
+        self.srv_realidad = self.create_service(Trigger, 'get_panel_real', self.get_panel_real_callback)
 
-    def gestion_mapa_callback(self, msg):
-        """Recibe las órdenes del orquestador para cargar o vaciar el mapa."""
+        self.enviar_log("Map Loader LISTO. Esperando 'id_panel' en /rotate_panel.")
+
+    def get_panel_theory_callback(self, request, response):
+        response.success = True
+        response.message = json.dumps(self.paneles_teoria)
+        return response
+
+    def get_panel_real_callback(self, request, response):
+        response.success = True
+        response.message = json.dumps(self.paneles_realidad)
+        return response
+
+    def rotate_panel_callback(self, msg):
+        """
+        Maneja el mensaje: {"id_panel": "panel_0", "yaw_inc": 20.0, "pitch_inc": 10.0}
+        """
         try:
             datos = json.loads(msg.data)
-            accion = datos.get("accion")
-            mundo = datos.get("mundo")
-            csv_file = datos.get("csv")
+            target_id = datos.get("id_panel")  # CAMBIO: id_panel en lugar de id
             
-            # Extraemos fecha y hora
-            fecha = datos.get("fecha", "10/02/2001")
-            hora = datos.get("hora", "12:00")
+            # Buscamos el panel (ahora soportando que el CSV empiece en 0 o 1)
+            panel_real = next((p for p in self.paneles_realidad if p['id'] == target_id), None)
+            
+            if not panel_real:
+                self.enviar_log(f"ERROR: El panel '{target_id}' no existe en memoria.")
+                return
 
-            if accion == "CARGAR":
-                modelo = datos.get("modelo")
-                self.ejecutar_carga(mundo, csv_file, modelo, fecha, hora)
-            elif accion == "VACIAR":
-                self.ejecutar_vaciado(mundo, csv_file)
-
-        except json.JSONDecodeError:
-            self.enviar_log("ERROR: Se recibió un JSON corrupto en gestion_mapa.")
-
-    def ejecutar_carga(self, mundo, csv_file, modelo, fecha, hora):
-        """Procesa el CSV e invoca el script de inyección de Gazebo."""
-        self.enviar_log(f"Iniciando cálculo de posiciones desde {csv_file}...")
-        
-        # 1. Leemos el CSV y calculamos los ángulos
-        self.array_paneles = self.generar_array_desde_csv(csv_file, fecha, hora)
-        
-        # 2. Publicamos el JSON de los paneles para el resto de la simulación
-        msg_array = String()
-        msg_array.data = json.dumps(self.array_paneles)
-        self.pub_paneles.publish(msg_array)
-        self.enviar_log(
-            f"Array con {len(self.array_paneles)} paneles publicado en "
-            "/sim_data/paneles_info"
-        )
-        
-        # 3. Inyectamos los paneles físicos en Gazebo
-        try:
-            self.enviar_log(f"Inyectando {len(self.array_paneles)} paneles en Gazebo...")
-            inyectar_paneles(mundo, self.array_paneles, modelo)
-            self.enviar_log("Inyección completada con éxito.")
+            # 1. Modificar la Realidad (en radianes)
+            panel_real['yaw'] += math.radians(datos.get("yaw_inc", 0.0))
+            panel_real['pitch'] += math.radians(datos.get("pitch_inc", 0.0))
+            
+            # 2. Actualizar Gazebo
+            eliminar_paneles(self.mundo_actual, [panel_real])
+            inyectar_paneles(self.mundo_actual, [panel_real], self.modelo_actual)
+            
+            # 3. Notificar al Faker
+            update_msg = String()
+            update_msg.data = json.dumps([target_id])
+            self.pub_updates.publish(update_msg)
+            
+            self.enviar_log(f"ROTACIÓN: {target_id} movido exitosamente.")
+            
         except Exception as e:
-            self.enviar_log(f"ERROR en script de inyección: {e}")
+            self.enviar_log(f"Fallo en rotación: {e}")
 
-    def ejecutar_vaciado(self, mundo, csv_file):
-        """Vacía el mapa invocando el script de eliminación de Gazebo."""
-        self.enviar_log("Iniciando proceso de vaciado de paneles...")
-        
-        # Generamos el array para saber qué borrar
-        self.array_paneles = self.generar_array_desde_csv(
-            csv_file, "00/00/0000", "00:00"
-        )
-        
+    def gestion_mapa_callback(self, msg):
         try:
-            eliminar_paneles(mundo, self.array_paneles)
-            
-            # Publicamos una lista vacía para avisar a los demás nodos
-            msg_vacio = String()
-            msg_vacio.data = json.dumps([]) 
-            self.pub_paneles.publish(msg_vacio)
-            
-            self.enviar_log("Vaciado completado. Array vacío publicado.")
-        except Exception as e:
-            self.enviar_log(f"ERROR en script de vaciado: {e}")
-
-    # ==========================================
-    # CÁLCULOS DEL CSV
-    # ==========================================
-    
-    def generar_array_desde_csv(self, nombre_csv, fecha, hora):
-        """Lee el archivo CSV, calcula orientaciones y devuelve la lista de paneles."""
-        ruta_absoluta = os.path.expanduser(f"~/{nombre_csv}")
-        lista_temporal = [] 
-        
-        try:
-            with open(ruta_absoluta, mode='r', encoding='utf-8') as archivo:
-                # Nota: next(archivo) se salta la primera línea.
-                # Si tu CSV tiene una primera línea de título y la segunda de cabeceras, es correcto.
-                next(archivo)
-                lector_csv = csv.DictReader(archivo)
+            datos = json.loads(msg.data)
+            if datos.get("accion") == "CARGAR":
+                self.mundo_actual = datos.get("mundo", self.mundo_actual)
+                self.modelo_actual = datos.get("modelo", self.modelo_actual)
                 
-                for fila in lector_csv:
-                    # Límite de 5 paneles (ideal para pruebas, recuerda quitarlo en producción)
-                    if len(lista_temporal) >= 5:
-                        break
-                    
-                    x = float(fila["Heliostat x"])
-                    y = float(fila["Heliostat y"])
-                    z = float(fila["Heliostat z"])
-                    
-                    aim_x = float(fila["Aiming point x"])
-                    aim_y = float(fila["Aiming point y"])
-                    aim_z = float(fila["Aiming point z"])
-                    
-                    pos_sol = obtener_sol_inventado(fecha, hora)
-                    yaw, pitch = calcular_orientacion_heliostato(
-                        [x, y, z], 
-                        [aim_x, aim_y, aim_z], 
-                        pos_sol
-                    )
+                # Cargamos
+                self.paneles_teoria = self.generar_array_desde_csv(
+                    datos.get("csv"), 
+                    datos.get("fecha", "10/02/2001"), 
+                    datos.get("hora", "12:00")
+                )
+                self.paneles_realidad = json.loads(json.dumps(self.paneles_teoria))
+                
+                # Inyectar
+                inyectar_paneles(self.mundo_actual, self.paneles_realidad, self.modelo_actual)
+                
+                # Notificar al Faker
+                update_msg = String()
+                update_msg.data = json.dumps([p['id'] for p in self.paneles_realidad])
+                self.pub_updates.publish(update_msg)
+                self.enviar_log(f"MAPA CARGADO: {len(self.paneles_teoria)} paneles.")
 
-                    panel = {
-                        "id": f"panel_{len(lista_temporal) + 1}",
-                        "x": x,
-                        "y": y,
-                        "z": z + 5,  # Offset en Z añadido
-                        "f_len_x": float(fila["Focal Length x"]),
-                        "f_len_y": float(fila["Focal Length y"]),
-                        "aim_x": aim_x,
-                        "aim_y": aim_y,
-                        "aim_z": aim_z,
-                        "width_x": float(fila["Heliostat width (x)"]),
-                        "length_y": float(fila["Heliostat length (y)"]),
-                        "yaw": yaw,
-                        "pitch": pitch
-                    }
-                    lista_temporal.append(panel) 
-                    
-            self.enviar_log(f"CSV leído. Se prepararon {len(lista_temporal)} paneles.")
-            return lista_temporal
-            
+            elif datos.get("accion") == "VACIAR":
+                eliminar_paneles(self.mundo_actual, self.paneles_realidad)
+                self.paneles_teoria = []
+                self.paneles_realidad = []
+                self.pub_updates.publish(String(data="[]"))
+                self.enviar_log("MAPA VACIADO.")
+
         except Exception as e:
-            self.enviar_log(f"ERROR al leer CSV: {e}")
+            self.enviar_log(f"Error gestion: {e}")
+
+    def generar_array_desde_csv(self, nombre_csv, fecha, hora):
+        ruta = os.path.expanduser(f"~/{nombre_csv}")
+        lista = []
+        try:
+            with open(ruta, mode='r', encoding='utf-8') as f:
+                next(f) # Saltar primera linea de metadatos
+                lector = csv.DictReader(f)
+                for fila in lector:
+                    if len(lista) >= 5: break 
+                    
+                    x, y, z = float(fila["Heliostat x"]), float(fila["Heliostat y"]), float(fila["Heliostat z"])
+                    ax, ay, az = float(fila["Aiming point x"]), float(fila["Aiming point y"]), float(fila["Aiming point z"])
+                    
+                    yaw, pitch = calcular_orientacion_heliostato([x,y,z], [ax,ay,az], obtener_sol_inventado(fecha, hora))
+                    
+                    # CAMBIO: Empezamos en panel_0 para que coincida con tu CLI
+                    panel_id = f"panel_{len(lista)}"
+                    
+                    lista.append({
+                        "id": panel_id, 
+                        "x": x, "y": y, "z": z + 5,
+                        "yaw": yaw, "pitch": pitch,
+                        "width_x": float(fila["Heliostat width (x)"]),
+                        "length_y": float(fila["Heliostat length (y)"])
+                    })
+            return lista
+        except Exception as e:
+            self.enviar_log(f"Error CSV: {e}")
             return []
 
     def enviar_log(self, texto):
-        """Encapsula la publicación y el registro local de logs."""
-        msg = String()
-        msg.data = f"[MAP_LOADER] {texto}"
+        msg = String(data=f"[MAP_LOADER] {texto}")
         self.pub_log.publish(msg)
         self.get_logger().info(texto)
-
 
 def main(args=None):
     rclpy.init(args=args)
     nodo = MapLoaderNode()
-    
-    try:
-        rclpy.spin(nodo)
-    except KeyboardInterrupt:
-        # Se omite el print manual ya que el log gestionará el apagado
-        pass
+    try: rclpy.spin(nodo)
+    except KeyboardInterrupt: pass
     finally:
         nodo.destroy_node()
-        if rclpy.ok():
-            rclpy.shutdown()
+        rclpy.shutdown()
 
-
-if __name__ == '__main__':
-    main()
+if __name__ == '__main__': main()
