@@ -27,12 +27,12 @@ class CalibrationNode(Node):
 
         # --- CLIENTES Y SUSCRIPCIONES ---
         self.cli_teoria = self.create_client(Trigger, 'get_panel_theory')
+        
         self.create_subscription(String, '/sim_status/panel_updates', self.actualizar_teoria_callback, 10)
         self.create_subscription(String, '/inspection/filtered_data', self.datos_filtrados_callback, 10)
-        
-        # NUEVO: Suscripción al ángulo de la cámara
         self.create_subscription(Float64MultiArray, '/control_param', self.param_callback, qos_profile_sensor_data)
         
+        # --- PUBLICADORES ---
         self.pub_resultados = self.create_publisher(String, '/calibration/results', 10)
         
         self.historial_errores = {}

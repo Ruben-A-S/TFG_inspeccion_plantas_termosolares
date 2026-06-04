@@ -36,14 +36,11 @@ class SimOrchestratorNode(Node):
         # --- PUBLICADORES ---
         self.pub_gestion_mapa = self.create_publisher(String, '/sim_cmd/map_management', 10)
         
-        self.pub_estado = self.create_publisher(String, 
-            '/sim_status/state', 10)
+        self.pub_estado = self.create_publisher(String, '/sim_status/state', 10)
         
-        self.pub_log = self.create_publisher(String, 
-            '/sim_status/log', 10)
+        self.pub_log = self.create_publisher(String, '/sim_status/log', 10)
         
-        self.pub_sim_activa = self.create_publisher(String, 
-            '/sim_status/active_sim', 10)
+        self.pub_sim_activa = self.create_publisher(String, '/sim_status/active_sim', 10)
         
         self.pub_params_control = self.create_publisher(Float64MultiArray, '/control_param', 10)
 

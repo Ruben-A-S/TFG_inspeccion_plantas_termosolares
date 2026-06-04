@@ -42,8 +42,6 @@ class RvizVisualizerNode(Node):
         self.create_subscription(PoseStamped, '/data/drone', self.dron_callback, 10)
         self.create_subscription(PoseStamped, '/data/camera', self.camara_callback, 10)
         self.create_subscription(PoseStamped, '/data/light', self.luz_callback, 10)
-        
-        # Suscripción corregida con el mensaje String importado
         self.create_subscription(String, '/inspection/raw_data', self.raw_data_callback, 10)
 
         # --- TIMER DE DIBUJO (10 Hz) ---

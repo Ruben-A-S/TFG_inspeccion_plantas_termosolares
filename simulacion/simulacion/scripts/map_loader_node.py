@@ -53,7 +53,6 @@ class MapLoaderNode(Node):
         # --- SUSCRIPTORES ---
         self.create_subscription(String, '/sim_cmd/map_management', self.gestion_mapa_callback, 10)
         
-        # IMPORTANTE: Escuchamos el tópico con la estructura que me has pasado
         self.create_subscription(String, '/sim_cmd/rotate_panel', self.rotate_panel_callback, 10)
 
         # --- PUBLICADORES ---

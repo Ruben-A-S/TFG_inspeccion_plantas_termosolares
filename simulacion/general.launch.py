@@ -75,13 +75,13 @@ def generate_launch_description():
         ),
         
         ExecuteProcess(
-            cmd=['python3', 'heliopoint_calibration_node.py'],
+            cmd=['python3', 'calibration_node.py'],
             cwd=ruta_scripts_calculo,
             output='screen'
         ),
         
         ExecuteProcess(
-            cmd=['python3', 'rviz_helio_markers_node.py'],
+            cmd=['python3', 'rviz_calibration_markers_node.py'],
             cwd=ruta_scripts_calculo,
             output='screen'
         )                
