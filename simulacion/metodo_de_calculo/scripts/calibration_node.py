@@ -24,6 +24,7 @@ class CalibrationNode(Node):
         super().__init__('calibration_node')
         
         self.paneles_teoria = {} 
+        self.historial_errores = {}  # ¡NUEVO! Inicializamos el diccionario del historial
 
         # --- CLIENTES Y SUSCRIPCIONES ---
         self.cli_teoria = self.create_client(Trigger, 'get_panel_theory')
@@ -35,7 +36,11 @@ class CalibrationNode(Node):
         # --- PUBLICADORES ---
         self.pub_resultados = self.create_publisher(String, '/calibration/results', 10)
         
-        self.historial_errores = {}
+        # Nuevo publicador para mandar los datos al data_logger_node (Indentación corregida)
+        self.error_pub = self.create_publisher(Float64MultiArray, '/heliostat_processed_errors', 10)
+
+        self.panel_en_enfoque = None
+        self.buffer_media_movil = [] # (Indentación corregida)
         
         # Distancia de la cámara al LED (en el sistema local de la cámara)
         self.d_cam_led = np.array([0.0, 0.0, -0.6])  
@@ -219,7 +224,8 @@ class CalibrationNode(Node):
                 "error_x_mrad": media_rotX, 
                 "error_y_mrad": media_rotY,
                 "normal_teorica": n_teo_global.tolist(),
-                "normal_medida": n_meas_global.tolist()
+                "normal_medida": n_meas_global.tolist(),
+                "rebote_local": p_rebote_local.tolist()
             })
 
         if resultados_iteracion:

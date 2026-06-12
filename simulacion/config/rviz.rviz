@@ -1,5 +1,6 @@
 Panels:
   - Class: rviz_common/Displays
+    Help Height: 70
     Name: Displays
     Property Tree Widget:
       Expanded:
@@ -9,7 +10,8 @@ Panels:
         - /Escena_Heliostatos1
         - /Area_Camara1
         - /Imagen_Virtual1
-    Tree Height: 600
+      Splitter Ratio: 0.5
+    Tree Height: 257
 Visualization Manager:
   Class: ""
   Displays:
@@ -18,12 +20,27 @@ Visualization Manager:
       Class: rviz_default_plugins/Grid
       Color: 160; 160; 164
       Enabled: true
+      Line Style:
+        Line Width: 0.029999999329447746
+        Value: Lines
       Name: Grid
+      Normal Cell Count: 0
+      Offset:
+        X: 0
+        Y: 0
+        Z: 0
+      Plane: XY
+      Plane Cell Count: 10
       Reference Frame: world
       Value: true
     - Class: rviz_default_plugins/MarkerArray
       Enabled: true
       Name: Escena_Heliostatos
+      Namespaces:
+        camara: true
+        dron: true
+        heliostatos: true
+        impactos: true
       Topic:
         Depth: 5
         Durability Policy: Volatile
@@ -34,6 +51,8 @@ Visualization Manager:
     - Class: rviz_default_plugins/MarkerArray
       Enabled: true
       Name: Area_Camara
+      Namespaces:
+        {}
       Topic:
         Depth: 5
         Durability Policy: Volatile
@@ -43,13 +62,45 @@ Visualization Manager:
       Value: true
     - Class: rviz_default_plugins/Image
       Enabled: true
+      Max Value: 1
+      Median window: 5
+      Min Value: 0
       Name: Imagen_Virtual
+      Normalize Range: true
       Topic:
         Depth: 5
         Durability Policy: Volatile
         History Policy: Keep Last
         Reliability Policy: Reliable
         Value: /virtual_camera/image
+      Value: true
+    - Class: rviz_default_plugins/MarkerArray
+      Enabled: true
+      Name: MarkerArray
+      Namespaces:
+        1_normal_teorica: true
+        2_normal_medida_instantanea: true
+        3_normal_media_acumulada: true
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /calibration/rviz_markers
+      Value: true
+    - Class: rviz_default_plugins/Image
+      Enabled: true
+      Max Value: 1
+      Median window: 5
+      Min Value: 0
+      Name: Image
+      Normalize Range: true
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /calibration/heatmap_image
       Value: true
   Enabled: true
   Global Options:
@@ -59,21 +110,48 @@ Visualization Manager:
   Name: root
   Tools:
     - Class: rviz_default_plugins/Interact
+      Hide Inactive Objects: true
     - Class: rviz_default_plugins/MoveCamera
     - Class: rviz_default_plugins/Select
     - Class: rviz_default_plugins/FocusCamera
+  Transformation:
+    Current:
+      Class: rviz_default_plugins/TF
+  Value: true
   Views:
     Current:
       Class: rviz_default_plugins/Orbit
-      Distance: 50
+      Distance: 39.67261505126953
+      Enable Stereo Rendering:
+        Stereo Eye Separation: 0.05999999865889549
+        Stereo Focal Distance: 1
+        Swap Stereo Eyes: false
+        Value: false
       Focal Point:
-        X: 0
-        Y: 0
-        Z: 0
+        X: 71.81963348388672
+        Y: 99.82867431640625
+        Z: 3.302323341369629
+      Focal Shape Fixed Size: true
+      Focal Shape Size: 0.05000000074505806
+      Invert Z Axis: false
       Name: Current View
-      Pitch: 0.785
-      Yaw: 0.785
+      Near Clip Distance: 0.009999999776482582
+      Pitch: 0.09500044584274292
+      Target Frame: <Fixed Frame>
       Value: Orbit (rviz)
+      Yaw: 5.3981781005859375
+    Saved: ~
 Window Geometry:
-  Height: 900
+  Displays:
+    collapsed: false
+  Height: 704
+  Hide Left Dock: false
+  Hide Right Dock: false
+  Image:
+    collapsed: false
+  Imagen_Virtual:
+    collapsed: false
+  QMainWindow State: 000000ff00000000fd00000002000000000000015600000266fc0200000002fb0000001c0049006d006100670065006e005f005600690072007400750061006c010000003d000000dc0000002800fffffffb000000100044006900730070006c006100790073010000011f00000184000000c900ffffff000000010000025d00000266fc0200000001fb0000000a0049006d006100670065010000003d000002660000002800ffffff000001b90000026600000004000000040000000800000008fc0000000100000002000000010000000a0054006f006f006c00730100000000ffffffff0000000000000000
   Width: 1400
+  X: 520
+  Y: 29

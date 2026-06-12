@@ -84,5 +84,11 @@ def generate_launch_description():
             cmd=['python3', 'rviz_calibration_markers_node.py'],
             cwd=ruta_scripts_calculo,
             output='screen'
-        )                
+        ),
+            
+        ExecuteProcess(
+            cmd=['python3', 'panel_analysis_logger_node.py'],
+            cwd=ruta_scripts_calculo,
+            output='screen'
+        )            
     ])
