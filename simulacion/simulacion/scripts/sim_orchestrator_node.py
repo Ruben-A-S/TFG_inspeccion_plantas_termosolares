@@ -131,20 +131,23 @@ class SimOrchestratorNode(Node):
         """Escucha el comando de girar panel para registrarlo en el log global."""
         try:
             datos = json.loads(msg.data)
-            # Asegúrate de poner "panel_0" con comillas para que sea un string por defecto
             id_panel = datos.get("id_panel", "panel_0") 
+            
+            # ¡NUEVO!: Leemos la faceta para que el log sea exacto
+            id_faceta = datos.get("id_faceta", "todas") 
+            
             yaw_inc_grados = datos.get("yaw_inc", 0.0)
             pitch_inc_grados = datos.get("pitch_inc", 0.0)
             
-            # Solo informamos. El map_manager_node es quien realmente hará el trabajo.
+            # Actualizamos el texto para reflejar si giramos todo o solo una pieza
             self.enviar_log(
-                f"Orden recibida: Girar {id_panel} (Yaw: +{yaw_inc_grados}º, Pitch: +{pitch_inc_grados}º). "
+                f"Orden recibida: Girar {id_panel} (Faceta: {id_faceta}) "
+                f"(Yaw: +{yaw_inc_grados}º, Pitch: +{pitch_inc_grados}º). "
                 f"Delegando ejecución al Gestor de Mapa."
             )
             
         except Exception as e:
             self.enviar_log(f"ERROR al procesar giro de panel en el Orquestador: {e}")
-            
     # ==========================================
     # CALLBACK DE ACCIONES PRINCIPALES
     # ==========================================

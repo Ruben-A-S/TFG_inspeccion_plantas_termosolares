@@ -11,6 +11,7 @@ from scipy.spatial.transform import Rotation as R
 from sensor_msgs.msg import Image
 from std_msgs.msg import String
 from std_srvs.srv import Trigger
+from rclpy.qos import qos_profile_sensor_data
 
 class VirtualCameraNode(Node):
     def __init__(self):
@@ -36,10 +37,10 @@ class VirtualCameraNode(Node):
 
         # --- SUSCRIPCIONES ---
         self.create_subscription(String, '/sim_status/panel_updates', self.actualizar_paneles_callback, 10)
-        self.create_subscription(PoseStamped, '/data/drone', self.dron_callback, 10)
-        self.create_subscription(PoseStamped, '/data/camera', self.camara_callback, 10)
-        self.create_subscription(String, '/inspection/raw_data', self.raw_data_callback, 10)
-
+        self.create_subscription(PoseStamped, '/data/drone', self.dron_callback, qos_profile_sensor_data)
+        self.create_subscription(PoseStamped, '/data/camera', self.camara_callback, qos_profile_sensor_data)
+        self.create_subscription(String, '/inspection/raw_data', self.raw_data_callback, qos_profile_sensor_data)
+        
         # --- TIMER (20 FPS) ---
         self.create_timer(0.05, self.render_loop)
 
@@ -73,7 +74,7 @@ class VirtualCameraNode(Node):
             self.impactos_recientes = []
 
     # ==========================================
-    # RENDER ENGINE
+    # RENDER ENGINE (Actualizado para Facetas)
     # ==========================================
 
     def render_loop(self):
@@ -84,44 +85,60 @@ class VirtualCameraNode(Node):
             r_cam = R.from_quat([self.cam_pose.pose.orientation.x, self.cam_pose.pose.orientation.y, 
                                  self.cam_pose.pose.orientation.z, self.cam_pose.pose.orientation.w]).as_matrix()
 
-            # 1. Proyectar Paneles
+            # 1. Proyectar Paneles (Y sus facetas si las tienen)
             for p in self.paneles_reales:
-                pos_p = np.array([p['x'], p['y'], p['z']])
-                if np.linalg.norm(pos_p - p_cam) > 150: continue
+                pos_p_global = np.array([p['x'], p['y'], p['z']])
+                if np.linalg.norm(pos_p_global - p_cam) > 150: continue
 
-                ancho, alto = p.get('width_x', 10.4)/2, p.get('length_y', 11.4)/2
-                r_p = R.from_euler('xyz', [0, p['pitch'], p['yaw']]).as_matrix()
-                
-                esquinas_l = [np.array([ancho, alto, 0]), np.array([-ancho, alto, 0]), 
-                              np.array([-ancho, -alto, 0]), np.array([ancho, -alto, 0])]
-                
-                pixels = []
-                puntos_fuera = 0
-                
-                for pt_l in esquinas_l:
-                    pt_w = r_p @ pt_l + pos_p
-                    u, v, pt_fuera = self.proyectar_a_pixel(pt_w, p_cam, r_cam)
-                    pixels.append((u, v))
-                    puntos_fuera += pt_fuera 
-                
-                # LA MAGIA: Si hay menos de 4 puntos fuera (es decir, AL MENOS UNO está dentro)
-                if puntos_fuera < 4:
-                    # Dibujamos las 4 líneas del rectángulo una por una para evitar errores de OpenCV con los 'None'
-                    for i in range(4):
-                        p1 = pixels[i]
-                        p2 = pixels[(i + 1) % 4]
-                        
-                        # Solo dibujamos la línea si ambos extremos existen matemáticamente (no están detrás de la cámara)
-                        if p1[0] is not None and p2[0] is not None:
-                            # OpenCV recorta automáticamente si un punto está fuera de la pantalla (ej: u=800)
-                            cv2.line(img, p1, p2, (0, 255, 0), 2)
+                r_p_global = R.from_euler('xyz', [0.0, p['pitch'], p['yaw']])
+
+                # Extraemos la lista de objetivos a dibujar (El panel entero o sus sub-facetas)
+                objetivos_dibujo = []
+                if 'facetas' in p:
+                    # MODO AVANZADO: Añadimos cada faceta
+                    w_f = p.get('width_x', 10.4) / 5.0
+                    l_f = p.get('length_y', 11.4) / 5.0
+                    for f in p['facetas']:
+                        pos_f_global = pos_p_global + r_p_global.apply(f['offset'])
+                        r_f_final = r_p_global * R.from_euler('xyz', [0.0, f['cant_pitch'], f['cant_yaw']])
+                        objetivos_dibujo.append({'pos': pos_f_global, 'rot_mat': r_f_final.as_matrix(), 'w': w_f, 'l': l_f})
+                else:
+                    # MODO SIMPLE: Añadimos el panel completo
+                    objetivos_dibujo.append({'pos': pos_p_global, 'rot_mat': r_p_global.as_matrix(), 
+                                             'w': p.get('width_x', 10.4), 'l': p.get('length_y', 11.4)})
+
+                # Dibujamos todos los objetivos extraídos
+                for obj in objetivos_dibujo:
+                    ancho, alto = obj['w']/2, obj['l']/2
+                    r_mat = obj['rot_mat']
+                    pos_obj = obj['pos']
+                    
+                    esquinas_l = [np.array([ancho, alto, 0]), np.array([-ancho, alto, 0]), 
+                                  np.array([-ancho, -alto, 0]), np.array([ancho, -alto, 0])]
+                    
+                    pixels = []
+                    puntos_fuera = 0
+                    
+                    for pt_l in esquinas_l:
+                        pt_w = r_mat @ pt_l + pos_obj
+                        u, v, pt_fuera = self.proyectar_a_pixel(pt_w, p_cam, r_cam)
+                        pixels.append((u, v))
+                        puntos_fuera += pt_fuera 
+                    
+                    # Si al menos un punto está en la pantalla, intentamos dibujarlo
+                    if puntos_fuera < 4:
+                        for i in range(4):
+                            p1 = pixels[i]
+                            p2 = pixels[(i + 1) % 4]
+                            if p1[0] is not None and p2[0] is not None:
+                                cv2.line(img, p1, p2, (0, 255, 0), 2)
 
             # 2. Proyectar Impactos (puntos amarillos)
             for imp in self.impactos_recientes:
                 pt_w = np.array(imp.get('rebote_world_debug', [0,0,0]))
                 u, v, pt_fuera = self.proyectar_a_pixel(pt_w, p_cam, r_cam)
                 
-                # Solo dibujamos el impacto si cae DENTRO de la pantalla (pt_fuera == 0)
+                # Solo dibujamos el impacto si cae DENTRO de la pantalla
                 if u is not None and pt_fuera == 0:
                     cv2.circle(img, (u, v), 8, (0, 255, 255), -1)
 
@@ -152,7 +169,8 @@ def main(args=None):
     except KeyboardInterrupt: pass
     finally:
         nodo.destroy_node()
-        rclpy.shutdown()
+        if rclpy.ok():
+            rclpy.shutdown()
 
 if __name__ == "__main__":
     main()

@@ -7,6 +7,7 @@ from rclpy.node import Node
 from scipy.spatial.transform import Rotation as R
 from std_msgs.msg import String
 from geometry_msgs.msg import PoseStamped
+from rclpy.qos import qos_profile_sensor_data
 
 class CameraFilterNode(Node):
     """
@@ -25,9 +26,9 @@ class CameraFilterNode(Node):
         self.cam_pose = None
 
         # --- SUSCRIPCIONES ---
-        self.create_subscription(PoseStamped, '/data/camera', self.camara_callback, 10)
-        self.create_subscription(String, '/inspection/raw_data', self.datos_crudos_callback, 10)
-
+        self.create_subscription(PoseStamped, '/data/camera', self.camara_callback, qos_profile_sensor_data)
+        self.create_subscription(String, '/inspection/raw_data', self.datos_crudos_callback, qos_profile_sensor_data)
+        
         # --- PUBLICADORES ---
         self.pub_filtered = self.create_publisher(String, '/inspection/filtered_data', 10)
         self.pub_log = self.create_publisher(String, '/sim_status/log', 10)
@@ -57,23 +58,24 @@ class CameraFilterNode(Node):
                                self.cam_pose.pose.orientation.z, self.cam_pose.pose.orientation.w]).as_matrix()
 
         for imp in impactos_raw:
-            # IMPORTANTE: El Faker ahora nos da el impacto en coordenadas MUNDO para facilitar esto
-            # o podemos usar la pose del panel que el Faker también conoce.
-            # Suponiendo que el Faker envía 'rebote_world'
+            # El Faker envía 'rebote_world_debug' con las coordenadas globales exactas
             p_w = np.array(imp.get('rebote_world_debug', [0,0,0]))
             
             if self.punto_en_fov(p_w, p_c, r_c_mat):
                 visibles.append(imp)
 
         if visibles:
-            # Enviar al Cerebro
+            # Enviar al Cerebro (Calibration Node)
             msg_final = String()
             msg_final.data = json.dumps(visibles)
             self.pub_filtered.publish(msg_final)
             
-            # Log de sistema
+            # --- MEJORA: Log detallado con los IDs de las piezas vistas ---
+            ids_vistos = list(set([imp.get('id_panel', 'desconocido') for imp in visibles]))
+            nombres = ", ".join(ids_vistos)
+            
             log = String()
-            log.data = f"[FILTER] {len(visibles)} impactos detectados en FOV."
+            log.data = f"[FILTER] {len(visibles)} impactos en FOV. Piezas: {nombres}"
             self.pub_log.publish(log)
 
     def punto_en_fov(self, p_mundo, p_cam, r_cam_matrix):
@@ -95,8 +97,14 @@ class CameraFilterNode(Node):
 def main(args=None):
     rclpy.init(args=args)
     nodo = CameraFilterNode()
-    rclpy.spin(nodo)
-    rclpy.shutdown()
+    try:
+        rclpy.spin(nodo)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        nodo.destroy_node()
+        if rclpy.ok():
+            rclpy.shutdown()
 
 if __name__ == "__main__":
     main()

@@ -7,6 +7,7 @@ from std_msgs.msg import String
 from std_srvs.srv import Trigger
 from visualization_msgs.msg import Marker, MarkerArray
 from geometry_msgs.msg import Point
+import numpy as np
 from scipy.spatial.transform import Rotation as R
 
 class RVizCalibrationMarkersNode(Node):
@@ -14,6 +15,7 @@ class RVizCalibrationMarkersNode(Node):
     Nodo encargado de suscribirse a los resultados de HelioPoint
     y publicar MarkerArrays en RViz para visualizar los vectores normales,
     incluyendo la reconstrucción de la Normal Media Acumulada.
+    Adaptado para soportar Heliostatos Multifacetados.
     """
     def __init__(self):
         super().__init__('rviz_calibration_markers_node')
@@ -27,10 +29,12 @@ class RVizCalibrationMarkersNode(Node):
         self.pub_markers = self.create_publisher(MarkerArray, '/calibration/rviz_markers', 10)
         
         self.frame_id = "world"  
-        self.longitud_flecha = 5.0  
+        # NOTA: He reducido la longitud de la flecha de 5.0 a 3.0 para que 
+        # en paneles de 25 facetas no se forme un borrón de colores gigante.
+        self.longitud_flecha = 3.0  
 
         self.pedir_mapa_teorico()
-        self.get_logger().info("Visualizador de RViz iniciado. Esperando vectores...")
+        self.get_logger().info("Visualizador de Flechas RViz iniciado [MODO FACETAS]. Esperando vectores...")
 
     def pedir_mapa_teorico(self):
         if not self.cli_teoria.service_is_ready():
@@ -38,13 +42,37 @@ class RVizCalibrationMarkersNode(Node):
         req = Trigger.Request()
         self.cli_teoria.call_async(req).add_done_callback(self.al_recibir_teoria)
 
+    # ==========================================
+    # LA MAGIA: APLANAR LA TEORÍA PARA LAS FLECHAS
+    # ==========================================
     def al_recibir_teoria(self, futuro):
         try:
             res = futuro.result()
             if res.success:
                 lista = json.loads(res.message)
-                self.paneles_teoria = {p['id']: p for p in lista}
-                self.get_logger().info(f"Plano Teórico cargado para RViz: {len(self.paneles_teoria)} posiciones.")
+                self.paneles_teoria = {}
+                
+                for p in lista:
+                    r_track = R.from_euler('xyz', [0.0, p['pitch'], p['yaw']])
+                    p_centro = np.array([p['x'], p['y'], p['z']])
+                    
+                    if 'facetas' in p:
+                        for f in p['facetas']:
+                            pos_f = p_centro + r_track.apply(f['offset'])
+                            r_f = r_track * R.from_euler('xyz', [0.0, f['cant_pitch'], f['cant_yaw']])
+                            euler_f = r_f.as_euler('xyz')
+                            
+                            self.paneles_teoria[str(f['id'])] = {
+                                'x': pos_f[0], 'y': pos_f[1], 'z': pos_f[2],
+                                'pitch': euler_f[1], 'yaw': euler_f[2]
+                            }
+                    else:
+                        self.paneles_teoria[str(p['id'])] = {
+                            'x': p['x'], 'y': p['y'], 'z': p['z'],
+                            'pitch': p['pitch'], 'yaw': p['yaw']
+                        }
+                        
+                self.get_logger().info(f"Puntos de anclaje de flechas listos: {len(self.paneles_teoria)} orígenes.")
         except Exception as e:
             self.get_logger().error(f"Error cargando teoría: {e}")
 
@@ -60,7 +88,7 @@ class RVizCalibrationMarkersNode(Node):
             marker_array = MarkerArray()
             
             for p in resultados:
-                p_id = p.get("id")
+                p_id = str(p.get("id"))
                 
                 if p_id not in self.paneles_teoria:
                     continue
@@ -79,16 +107,12 @@ class RVizCalibrationMarkersNode(Node):
                 error_y_rad = p.get("error_y_mrad", 0.0) / 1000.0
                 
                 # 3. RECONSTRUIR LA NORMAL MEDIA
-                # Recuperamos la orientación base del panel
                 pitch = panel_teo.get('pitch', 0.0)
                 yaw = panel_teo.get('yaw', 0.0)
                 r_teo = R.from_euler('xyz', [0.0, pitch, yaw])
                 
-                # Aplicamos la desviación media calculada al eje Z local del espejo
                 r_error = R.from_euler('xy', [error_x_rad, error_y_rad])
                 n_media_ccs = r_error.apply([0.0, 0.0, 1.0])
-                
-                # Transformamos la normal media local al mundo global
                 n_media_global = r_teo.apply(n_media_ccs)
                 
                 hash_id = abs(hash(str(p_id))) % 100000
@@ -148,9 +172,10 @@ class RVizCalibrationMarkersNode(Node):
         )
         marker.points = [p_inicio, p_fin]
         
-        marker.scale.x = 0.15 
-        marker.scale.y = 0.35 
-        marker.scale.z = 0.35 
+        # Escala: grosor de la flecha
+        marker.scale.x = 0.10  
+        marker.scale.y = 0.20  
+        marker.scale.z = 0.20  
         
         marker.color.r = color[0]
         marker.color.g = color[1]

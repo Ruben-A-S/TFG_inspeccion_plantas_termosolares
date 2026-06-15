@@ -70,3 +70,4 @@ def inyectar_paneles(mundo, array_paneles, modelo):
             stdout=subprocess.DEVNULL, 
             stderr=subprocess.DEVNULL
         )
+        
