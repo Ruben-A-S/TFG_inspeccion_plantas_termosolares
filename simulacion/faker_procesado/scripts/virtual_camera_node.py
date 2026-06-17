@@ -74,7 +74,7 @@ class VirtualCameraNode(Node):
             self.impactos_recientes = []
 
     # ==========================================
-    # RENDER ENGINE (Actualizado para Facetas)
+    # RENDER ENGINE (Cinemática Unificada)
     # ==========================================
 
     def render_loop(self):
@@ -87,10 +87,13 @@ class VirtualCameraNode(Node):
 
             # 1. Proyectar Paneles (Y sus facetas si las tienen)
             for p in self.paneles_reales:
-                pos_p_global = np.array([p['x'], p['y'], p['z']])
+                pos_p_global = np.array([p.get('x', 0.0), p.get('y', 0.0), p.get('z', 0.0)])
                 if np.linalg.norm(pos_p_global - p_cam) > 150: continue
 
-                r_p_global = R.from_euler('xyz', [0.0, p['pitch'], p['yaw']])
+                # CINEMÁTICA DEL PANEL GLOBAL (Igual que en MapLoader y OpticsCalculator)
+                rot_yaw = R.from_euler('z', p.get('yaw', 0.0))
+                rot_pitch = R.from_euler('y', p.get('pitch', 0.0))
+                r_p_global = rot_yaw * rot_pitch
 
                 # Extraemos la lista de objetivos a dibujar (El panel entero o sus sub-facetas)
                 objetivos_dibujo = []
@@ -99,8 +102,13 @@ class VirtualCameraNode(Node):
                     w_f = p.get('width_x', 10.4) / 5.0
                     l_f = p.get('length_y', 11.4) / 5.0
                     for f in p['facetas']:
-                        pos_f_global = pos_p_global + r_p_global.apply(f['offset'])
-                        r_f_final = r_p_global * R.from_euler('xyz', [0.0, f['cant_pitch'], f['cant_yaw']])
+                        offset_local = np.array(f.get('offset', [0.0, 0.0, 0.0]))
+                        pos_f_global = pos_p_global + r_p_global.apply(offset_local)
+                        
+                        # CINEMÁTICA LOCAL DE LA FACETA (Roll y Pitch)
+                        rot_canting = R.from_euler('xy', [f.get('cant_roll', 0.0), f.get('cant_pitch', 0.0)])
+                        r_f_final = r_p_global * rot_canting
+                        
                         objetivos_dibujo.append({'pos': pos_f_global, 'rot_mat': r_f_final.as_matrix(), 'w': w_f, 'l': l_f})
                 else:
                     # MODO SIMPLE: Añadimos el panel completo

@@ -112,33 +112,43 @@ def menu_interactivo(nodo):
         elif opcion == '6':
             try:
                 id_entrada = input("   Id del panel o faceta a girar [panel_0]: ") or "panel_0"
-                angulo_yaw = float(input("   incremento de yaw [0.0]: ") or "0.0")
-                angulo_pitch = float(input("   incremento de pitch [0.0]: ") or "0.0")
                 
-                # --- NUEVA LÓGICA DE AUTO-DETECCIÓN ---
                 if "_f" in id_entrada:
                     # Si el usuario escribe "panel_4_f4_0", lo partimos por "_f"
+                    angulo_roll = float(input("   incremento de roll [0.0]: ") or "0.0")
+                    angulo_pitch = float(input("   incremento de pitch [0.0]: ") or "0.0")
                     # El padre será "panel_4" y la faceta será el texto completo
                     id_panel = id_entrada.split("_f")[0]
                     id_faceta = id_entrada
+                    
+                    # Publicamos el JSON con los dos campos separados correctamente
+                    nodo.publicar_json(nodo.pub_giro_panel, {
+                        "id_panel": id_panel, 
+                        "id_faceta": id_faceta,
+                        "roll_inc": angulo_roll, 
+                        "pitch_inc": angulo_pitch
+                    })
+                    
                 else:
                     # Si escribe solo "panel_4", se gira el bloque entero
+                    angulo_yaw = float(input("   incremento de yaw [0.0]: ") or "0.0")
+                    angulo_pitch = float(input("   incremento de pitch [0.0]: ") or "0.0")
                     id_panel = id_entrada
                     id_faceta = "todas"
                 
-                # Publicamos el JSON con los dos campos separados correctamente
-                nodo.publicar_json(nodo.pub_giro_panel, {
-                    "id_panel": id_panel, 
-                    "id_faceta": id_faceta,
-                    "yaw_inc": angulo_yaw, 
-                    "pitch_inc": angulo_pitch
-                })
+                    # Publicamos el JSON con los dos campos separados correctamente
+                    nodo.publicar_json(nodo.pub_giro_panel, {
+                        "id_panel": id_panel, 
+                        "id_faceta": id_faceta,
+                        "yaw_inc": angulo_yaw, 
+                        "pitch_inc": angulo_pitch
+                    })
                 
                 # Mensaje dinámico de confirmación
                 if id_faceta == "todas":
                     print(f"   [OK] Orden al panel completo {id_panel} de giro yaw += {angulo_yaw}° y pitch += {angulo_pitch}º enviada.")
                 else:
-                    print(f"   [OK] Orden a la faceta {id_faceta} del {id_panel} de giro yaw += {angulo_yaw}° y pitch += {angulo_pitch}º enviada.")
+                    print(f"   [OK] Orden a la faceta {id_faceta} del {id_panel} de giro roll += {angulo_roll}° y pitch += {angulo_pitch}º enviada.")
                     
             except ValueError:
                 print("   [ERROR] Introduce un id y valores numéricos de ángulos válidos.")

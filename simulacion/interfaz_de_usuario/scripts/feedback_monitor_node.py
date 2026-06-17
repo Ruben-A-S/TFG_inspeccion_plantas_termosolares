@@ -25,6 +25,14 @@ class Color:
     BOLD = '\033[1m'
 
 class FeedbackMonitorNode(Node):
+    """
+    Nodo subscriptor de diferentes tópicos que ofrece 
+    feedback del estado de la simulación.
+
+    Además de mostrar feedback de las órdenes enviadas con la interfaz, 
+    permite visualizar resultados del método de inspección, 
+    mostrando el error de orientación medido.
+    """
     def __init__(self):
         super().__init__('feedback_monitor_node')
         
@@ -42,9 +50,9 @@ class FeedbackMonitorNode(Node):
         
         self.estado_actual = ""
 
-        print(f"\n{Color.OKCYAN}{Color.BOLD}" + "=" * 65)
+        print(f"\n{Color.OKCYAN}{Color.BOLD}" + "=" * 45)
         print("         MONITOR CENTRAL DE INSPECCIÓN TERMOSOLAR ACTIVO")
-        print("=" * 65 + f"{Color.ENDC}\n")
+        print("=" * 45 + f"{Color.ENDC}\n")
 
     def estado_callback(self, msg):
         nuevo_estado = msg.data

@@ -133,21 +133,34 @@ class SimOrchestratorNode(Node):
             datos = json.loads(msg.data)
             id_panel = datos.get("id_panel", "panel_0") 
             
-            # ¡NUEVO!: Leemos la faceta para que el log sea exacto
+            # Leemos la faceta para que el log sea exacto
             id_faceta = datos.get("id_faceta", "todas") 
             
-            yaw_inc_grados = datos.get("yaw_inc", 0.0)
-            pitch_inc_grados = datos.get("pitch_inc", 0.0)
+            if "_f" in id_faceta:
+                roll_inc_grados = datos.get("roll_inc", 0.0)
+                pitch_inc_grados = datos.get("pitch_inc", 0.0)
             
-            # Actualizamos el texto para reflejar si giramos todo o solo una pieza
-            self.enviar_log(
-                f"Orden recibida: Girar {id_panel} (Faceta: {id_faceta}) "
-                f"(Yaw: +{yaw_inc_grados}º, Pitch: +{pitch_inc_grados}º). "
-                f"Delegando ejecución al Gestor de Mapa."
-            )
+                # Actualizamos el texto para reflejar si giramos todo o solo una pieza
+                self.enviar_log(
+                    f"Orden recibida: Girar {id_panel} (Faceta: {id_faceta}) "
+                    f"(Roll: +{roll_inc_grados}º, Pitch: +{pitch_inc_grados}º). "
+                    f"Delegando ejecución al Gestor de Mapa."
+                )
+                
+            else:
+                yaw_inc_grados = datos.get("yaw_inc", 0.0)
+                pitch_inc_grados = datos.get("pitch_inc", 0.0)
+            
+                # Actualizamos el texto para reflejar si giramos todo o solo una pieza
+                self.enviar_log(
+                    f"Orden recibida: Girar {id_panel} (Faceta: {id_faceta}) "
+                    f"(Yaw: +{yaw_inc_grados}º, Pitch: +{pitch_inc_grados}º). "
+                    f"Delegando ejecución al Gestor de Mapa."
+                )
             
         except Exception as e:
             self.enviar_log(f"ERROR al procesar giro de panel en el Orquestador: {e}")
+
     # ==========================================
     # CALLBACK DE ACCIONES PRINCIPALES
     # ==========================================
@@ -172,7 +185,7 @@ class SimOrchestratorNode(Node):
             self.enviar_log(f"Orden desconocida: {orden}")
 
     # ==========================================
-    # LÓGICA DE NEGOCIO (Los "Músculos")
+    # GENERACION DE MUNDO
     # ==========================================
     
     def ejecutar_generacion_total(self):
@@ -180,7 +193,7 @@ class SimOrchestratorNode(Node):
         if self.proceso_simulacion is not None:
             self.enviar_log(
                 "ADVERTENCIA: La simulación ya está corriendo. "
-                "Cierra la actual (Opción 9) antes de generar otra."
+                "Cierra la actual (Opción 10) antes de generar otra."
             )
             return
             

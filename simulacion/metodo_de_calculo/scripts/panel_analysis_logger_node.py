@@ -53,7 +53,7 @@ class PanelAnalysisLoggerNode(Node):
             
             id_padre = partes[0]
             indices = partes[1].split('_')
-            return id_padre, int(indices[0]), int(indices[1])
+            return id_padre, int(indices[1]), int(indices[0])
         except:
             return id_faceta, None, None
 

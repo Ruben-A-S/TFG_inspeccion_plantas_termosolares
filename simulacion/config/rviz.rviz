@@ -1,6 +1,6 @@
 Panels:
   - Class: rviz_common/Displays
-    Help Height: 70
+    Help Height: 0
     Name: Displays
     Property Tree Widget:
       Expanded:
@@ -10,8 +10,9 @@ Panels:
         - /Escena_Heliostatos1
         - /Area_Camara1
         - /Imagen_Virtual1
+        - /TF1
       Splitter Ratio: 0.5
-    Tree Height: 257
+    Tree Height: 140
 Visualization Manager:
   Class: ""
   Displays:
@@ -102,6 +103,552 @@ Visualization Manager:
         Reliability Policy: Reliable
         Value: /calibration/heatmap_image
       Value: true
+    - Class: rviz_default_plugins/TF
+      Enabled: true
+      Frame Timeout: 15
+      Frames:
+        All Enabled: true
+        faceta_panel_0_f0_0:
+          Value: true
+        faceta_panel_0_f0_1:
+          Value: true
+        faceta_panel_0_f0_2:
+          Value: true
+        faceta_panel_0_f0_3:
+          Value: true
+        faceta_panel_0_f0_4:
+          Value: true
+        faceta_panel_0_f1_0:
+          Value: true
+        faceta_panel_0_f1_1:
+          Value: true
+        faceta_panel_0_f1_2:
+          Value: true
+        faceta_panel_0_f1_3:
+          Value: true
+        faceta_panel_0_f1_4:
+          Value: true
+        faceta_panel_0_f2_0:
+          Value: true
+        faceta_panel_0_f2_1:
+          Value: true
+        faceta_panel_0_f2_2:
+          Value: true
+        faceta_panel_0_f2_3:
+          Value: true
+        faceta_panel_0_f2_4:
+          Value: true
+        faceta_panel_0_f3_0:
+          Value: true
+        faceta_panel_0_f3_1:
+          Value: true
+        faceta_panel_0_f3_2:
+          Value: true
+        faceta_panel_0_f3_3:
+          Value: true
+        faceta_panel_0_f3_4:
+          Value: true
+        faceta_panel_0_f4_0:
+          Value: true
+        faceta_panel_0_f4_1:
+          Value: true
+        faceta_panel_0_f4_2:
+          Value: true
+        faceta_panel_0_f4_3:
+          Value: true
+        faceta_panel_0_f4_4:
+          Value: true
+        faceta_panel_1_f0_0:
+          Value: true
+        faceta_panel_1_f0_1:
+          Value: true
+        faceta_panel_1_f0_2:
+          Value: true
+        faceta_panel_1_f0_3:
+          Value: true
+        faceta_panel_1_f0_4:
+          Value: true
+        faceta_panel_1_f1_0:
+          Value: true
+        faceta_panel_1_f1_1:
+          Value: true
+        faceta_panel_1_f1_2:
+          Value: true
+        faceta_panel_1_f1_3:
+          Value: true
+        faceta_panel_1_f1_4:
+          Value: true
+        faceta_panel_1_f2_0:
+          Value: true
+        faceta_panel_1_f2_1:
+          Value: true
+        faceta_panel_1_f2_2:
+          Value: true
+        faceta_panel_1_f2_3:
+          Value: true
+        faceta_panel_1_f2_4:
+          Value: true
+        faceta_panel_1_f3_0:
+          Value: true
+        faceta_panel_1_f3_1:
+          Value: true
+        faceta_panel_1_f3_2:
+          Value: true
+        faceta_panel_1_f3_3:
+          Value: true
+        faceta_panel_1_f3_4:
+          Value: true
+        faceta_panel_1_f4_0:
+          Value: true
+        faceta_panel_1_f4_1:
+          Value: true
+        faceta_panel_1_f4_2:
+          Value: true
+        faceta_panel_1_f4_3:
+          Value: true
+        faceta_panel_1_f4_4:
+          Value: true
+        faceta_panel_2_f0_0:
+          Value: true
+        faceta_panel_2_f0_1:
+          Value: true
+        faceta_panel_2_f0_2:
+          Value: true
+        faceta_panel_2_f0_3:
+          Value: true
+        faceta_panel_2_f0_4:
+          Value: true
+        faceta_panel_2_f1_0:
+          Value: true
+        faceta_panel_2_f1_1:
+          Value: true
+        faceta_panel_2_f1_2:
+          Value: true
+        faceta_panel_2_f1_3:
+          Value: true
+        faceta_panel_2_f1_4:
+          Value: true
+        faceta_panel_2_f2_0:
+          Value: true
+        faceta_panel_2_f2_1:
+          Value: true
+        faceta_panel_2_f2_2:
+          Value: true
+        faceta_panel_2_f2_3:
+          Value: true
+        faceta_panel_2_f2_4:
+          Value: true
+        faceta_panel_2_f3_0:
+          Value: true
+        faceta_panel_2_f3_1:
+          Value: true
+        faceta_panel_2_f3_2:
+          Value: true
+        faceta_panel_2_f3_3:
+          Value: true
+        faceta_panel_2_f3_4:
+          Value: true
+        faceta_panel_2_f4_0:
+          Value: true
+        faceta_panel_2_f4_1:
+          Value: true
+        faceta_panel_2_f4_2:
+          Value: true
+        faceta_panel_2_f4_3:
+          Value: true
+        faceta_panel_2_f4_4:
+          Value: true
+        faceta_panel_3_f0_0:
+          Value: true
+        faceta_panel_3_f0_1:
+          Value: true
+        faceta_panel_3_f0_2:
+          Value: true
+        faceta_panel_3_f0_3:
+          Value: true
+        faceta_panel_3_f0_4:
+          Value: true
+        faceta_panel_3_f1_0:
+          Value: true
+        faceta_panel_3_f1_1:
+          Value: true
+        faceta_panel_3_f1_2:
+          Value: true
+        faceta_panel_3_f1_3:
+          Value: true
+        faceta_panel_3_f1_4:
+          Value: true
+        faceta_panel_3_f2_0:
+          Value: true
+        faceta_panel_3_f2_1:
+          Value: true
+        faceta_panel_3_f2_2:
+          Value: true
+        faceta_panel_3_f2_3:
+          Value: true
+        faceta_panel_3_f2_4:
+          Value: true
+        faceta_panel_3_f3_0:
+          Value: true
+        faceta_panel_3_f3_1:
+          Value: true
+        faceta_panel_3_f3_2:
+          Value: true
+        faceta_panel_3_f3_3:
+          Value: true
+        faceta_panel_3_f3_4:
+          Value: true
+        faceta_panel_3_f4_0:
+          Value: true
+        faceta_panel_3_f4_1:
+          Value: true
+        faceta_panel_3_f4_2:
+          Value: true
+        faceta_panel_3_f4_3:
+          Value: true
+        faceta_panel_3_f4_4:
+          Value: true
+        faceta_panel_4_f0_0:
+          Value: true
+        faceta_panel_4_f0_1:
+          Value: true
+        faceta_panel_4_f0_2:
+          Value: true
+        faceta_panel_4_f0_3:
+          Value: true
+        faceta_panel_4_f0_4:
+          Value: true
+        faceta_panel_4_f1_0:
+          Value: true
+        faceta_panel_4_f1_1:
+          Value: true
+        faceta_panel_4_f1_2:
+          Value: true
+        faceta_panel_4_f1_3:
+          Value: true
+        faceta_panel_4_f1_4:
+          Value: true
+        faceta_panel_4_f2_0:
+          Value: true
+        faceta_panel_4_f2_1:
+          Value: true
+        faceta_panel_4_f2_2:
+          Value: true
+        faceta_panel_4_f2_3:
+          Value: true
+        faceta_panel_4_f2_4:
+          Value: true
+        faceta_panel_4_f3_0:
+          Value: true
+        faceta_panel_4_f3_1:
+          Value: true
+        faceta_panel_4_f3_2:
+          Value: true
+        faceta_panel_4_f3_3:
+          Value: true
+        faceta_panel_4_f3_4:
+          Value: true
+        faceta_panel_4_f4_0:
+          Value: true
+        faceta_panel_4_f4_1:
+          Value: true
+        faceta_panel_4_f4_2:
+          Value: true
+        faceta_panel_4_f4_3:
+          Value: true
+        faceta_panel_4_f4_4:
+          Value: true
+        inclinacion_panel_0:
+          Value: true
+        inclinacion_panel_1:
+          Value: true
+        inclinacion_panel_2:
+          Value: true
+        inclinacion_panel_3:
+          Value: true
+        inclinacion_panel_4:
+          Value: true
+        panel_panel_0:
+          Value: true
+        panel_panel_1:
+          Value: true
+        panel_panel_2:
+          Value: true
+        panel_panel_3:
+          Value: true
+        panel_panel_4:
+          Value: true
+        world:
+          Value: true
+      Marker Scale: 3
+      Name: TF
+      Show Arrows: true
+      Show Axes: true
+      Show Names: false
+      Tree:
+        world:
+          panel_panel_0:
+            inclinacion_panel_0:
+              faceta_panel_0_f0_0:
+                {}
+              faceta_panel_0_f0_1:
+                {}
+              faceta_panel_0_f0_2:
+                {}
+              faceta_panel_0_f0_3:
+                {}
+              faceta_panel_0_f0_4:
+                {}
+              faceta_panel_0_f1_0:
+                {}
+              faceta_panel_0_f1_1:
+                {}
+              faceta_panel_0_f1_2:
+                {}
+              faceta_panel_0_f1_3:
+                {}
+              faceta_panel_0_f1_4:
+                {}
+              faceta_panel_0_f2_0:
+                {}
+              faceta_panel_0_f2_1:
+                {}
+              faceta_panel_0_f2_2:
+                {}
+              faceta_panel_0_f2_3:
+                {}
+              faceta_panel_0_f2_4:
+                {}
+              faceta_panel_0_f3_0:
+                {}
+              faceta_panel_0_f3_1:
+                {}
+              faceta_panel_0_f3_2:
+                {}
+              faceta_panel_0_f3_3:
+                {}
+              faceta_panel_0_f3_4:
+                {}
+              faceta_panel_0_f4_0:
+                {}
+              faceta_panel_0_f4_1:
+                {}
+              faceta_panel_0_f4_2:
+                {}
+              faceta_panel_0_f4_3:
+                {}
+              faceta_panel_0_f4_4:
+                {}
+          panel_panel_1:
+            inclinacion_panel_1:
+              faceta_panel_1_f0_0:
+                {}
+              faceta_panel_1_f0_1:
+                {}
+              faceta_panel_1_f0_2:
+                {}
+              faceta_panel_1_f0_3:
+                {}
+              faceta_panel_1_f0_4:
+                {}
+              faceta_panel_1_f1_0:
+                {}
+              faceta_panel_1_f1_1:
+                {}
+              faceta_panel_1_f1_2:
+                {}
+              faceta_panel_1_f1_3:
+                {}
+              faceta_panel_1_f1_4:
+                {}
+              faceta_panel_1_f2_0:
+                {}
+              faceta_panel_1_f2_1:
+                {}
+              faceta_panel_1_f2_2:
+                {}
+              faceta_panel_1_f2_3:
+                {}
+              faceta_panel_1_f2_4:
+                {}
+              faceta_panel_1_f3_0:
+                {}
+              faceta_panel_1_f3_1:
+                {}
+              faceta_panel_1_f3_2:
+                {}
+              faceta_panel_1_f3_3:
+                {}
+              faceta_panel_1_f3_4:
+                {}
+              faceta_panel_1_f4_0:
+                {}
+              faceta_panel_1_f4_1:
+                {}
+              faceta_panel_1_f4_2:
+                {}
+              faceta_panel_1_f4_3:
+                {}
+              faceta_panel_1_f4_4:
+                {}
+          panel_panel_2:
+            inclinacion_panel_2:
+              faceta_panel_2_f0_0:
+                {}
+              faceta_panel_2_f0_1:
+                {}
+              faceta_panel_2_f0_2:
+                {}
+              faceta_panel_2_f0_3:
+                {}
+              faceta_panel_2_f0_4:
+                {}
+              faceta_panel_2_f1_0:
+                {}
+              faceta_panel_2_f1_1:
+                {}
+              faceta_panel_2_f1_2:
+                {}
+              faceta_panel_2_f1_3:
+                {}
+              faceta_panel_2_f1_4:
+                {}
+              faceta_panel_2_f2_0:
+                {}
+              faceta_panel_2_f2_1:
+                {}
+              faceta_panel_2_f2_2:
+                {}
+              faceta_panel_2_f2_3:
+                {}
+              faceta_panel_2_f2_4:
+                {}
+              faceta_panel_2_f3_0:
+                {}
+              faceta_panel_2_f3_1:
+                {}
+              faceta_panel_2_f3_2:
+                {}
+              faceta_panel_2_f3_3:
+                {}
+              faceta_panel_2_f3_4:
+                {}
+              faceta_panel_2_f4_0:
+                {}
+              faceta_panel_2_f4_1:
+                {}
+              faceta_panel_2_f4_2:
+                {}
+              faceta_panel_2_f4_3:
+                {}
+              faceta_panel_2_f4_4:
+                {}
+          panel_panel_3:
+            inclinacion_panel_3:
+              faceta_panel_3_f0_0:
+                {}
+              faceta_panel_3_f0_1:
+                {}
+              faceta_panel_3_f0_2:
+                {}
+              faceta_panel_3_f0_3:
+                {}
+              faceta_panel_3_f0_4:
+                {}
+              faceta_panel_3_f1_0:
+                {}
+              faceta_panel_3_f1_1:
+                {}
+              faceta_panel_3_f1_2:
+                {}
+              faceta_panel_3_f1_3:
+                {}
+              faceta_panel_3_f1_4:
+                {}
+              faceta_panel_3_f2_0:
+                {}
+              faceta_panel_3_f2_1:
+                {}
+              faceta_panel_3_f2_2:
+                {}
+              faceta_panel_3_f2_3:
+                {}
+              faceta_panel_3_f2_4:
+                {}
+              faceta_panel_3_f3_0:
+                {}
+              faceta_panel_3_f3_1:
+                {}
+              faceta_panel_3_f3_2:
+                {}
+              faceta_panel_3_f3_3:
+                {}
+              faceta_panel_3_f3_4:
+                {}
+              faceta_panel_3_f4_0:
+                {}
+              faceta_panel_3_f4_1:
+                {}
+              faceta_panel_3_f4_2:
+                {}
+              faceta_panel_3_f4_3:
+                {}
+              faceta_panel_3_f4_4:
+                {}
+          panel_panel_4:
+            inclinacion_panel_4:
+              faceta_panel_4_f0_0:
+                {}
+              faceta_panel_4_f0_1:
+                {}
+              faceta_panel_4_f0_2:
+                {}
+              faceta_panel_4_f0_3:
+                {}
+              faceta_panel_4_f0_4:
+                {}
+              faceta_panel_4_f1_0:
+                {}
+              faceta_panel_4_f1_1:
+                {}
+              faceta_panel_4_f1_2:
+                {}
+              faceta_panel_4_f1_3:
+                {}
+              faceta_panel_4_f1_4:
+                {}
+              faceta_panel_4_f2_0:
+                {}
+              faceta_panel_4_f2_1:
+                {}
+              faceta_panel_4_f2_2:
+                {}
+              faceta_panel_4_f2_3:
+                {}
+              faceta_panel_4_f2_4:
+                {}
+              faceta_panel_4_f3_0:
+                {}
+              faceta_panel_4_f3_1:
+                {}
+              faceta_panel_4_f3_2:
+                {}
+              faceta_panel_4_f3_3:
+                {}
+              faceta_panel_4_f3_4:
+                {}
+              faceta_panel_4_f4_0:
+                {}
+              faceta_panel_4_f4_1:
+                {}
+              faceta_panel_4_f4_2:
+                {}
+              faceta_panel_4_f4_3:
+                {}
+              faceta_panel_4_f4_4:
+                {}
+      Update Interval: 0
+      Value: true
   Enabled: true
   Global Options:
     Background Color: 48; 48; 48
@@ -121,37 +668,37 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz_default_plugins/Orbit
-      Distance: 39.67261505126953
+      Distance: 50.72598648071289
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
         Swap Stereo Eyes: false
         Value: false
       Focal Point:
-        X: 71.81963348388672
-        Y: 99.82867431640625
-        Z: 3.302323341369629
+        X: 98.25078582763672
+        Y: 100.3011245727539
+        Z: 0.8611772060394287
       Focal Shape Fixed Size: true
       Focal Shape Size: 0.05000000074505806
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 0.09500044584274292
+      Pitch: 0.17479701340198517
       Target Frame: <Fixed Frame>
       Value: Orbit (rviz)
-      Yaw: 5.3981781005859375
+      Yaw: 5.01816987991333
     Saved: ~
 Window Geometry:
   Displays:
     collapsed: false
-  Height: 704
+  Height: 577
   Hide Left Dock: false
   Hide Right Dock: false
   Image:
     collapsed: false
   Imagen_Virtual:
     collapsed: false
-  QMainWindow State: 000000ff00000000fd00000002000000000000015600000266fc0200000002fb0000001c0049006d006100670065006e005f005600690072007400750061006c010000003d000000dc0000002800fffffffb000000100044006900730070006c006100790073010000011f00000184000000c900ffffff000000010000025d00000266fc0200000001fb0000000a0049006d006100670065010000003d000002660000002800ffffff000001b90000026600000004000000040000000800000008fc0000000100000002000000010000000a0054006f006f006c00730100000000ffffffff0000000000000000
-  Width: 1400
-  X: 520
+  QMainWindow State: 000000ff00000000fd000000020000000000000156000001e7fc0200000002fb0000001c0049006d006100670065006e005f005600690072007400750061006c010000003d000001180000002800fffffffb000000100044006900730070006c006100790073010000015b000000c9000000c900ffffff000000010000031f000001e7fc0200000001fb0000000a0049006d006100670065010000003d000001e70000002800ffffff0000010c000001e700000004000000040000000800000008fc0000000100000002000000010000000a0054006f006f006c00730100000000ffffffff0000000000000000
+  Width: 1421
+  X: 499
   Y: 29

@@ -34,7 +34,7 @@ class RVizCalibrationMarkersNode(Node):
         self.longitud_flecha = 3.0  
 
         self.pedir_mapa_teorico()
-        self.get_logger().info("Visualizador de Flechas RViz iniciado [MODO FACETAS]. Esperando vectores...")
+        self.get_logger().info("Visualizador de Flechas RViz iniciado [MODO FACETAS UNIFICADO]. Esperando vectores...")
 
     def pedir_mapa_teorico(self):
         if not self.cli_teoria.service_is_ready():
@@ -43,7 +43,7 @@ class RVizCalibrationMarkersNode(Node):
         self.cli_teoria.call_async(req).add_done_callback(self.al_recibir_teoria)
 
     # ==========================================
-    # LA MAGIA: APLANAR LA TEORÍA PARA LAS FLECHAS
+    # LA MAGIA: CINEMÁTICA UNIFICADA EN MEMORIA
     # ==========================================
     def al_recibir_teoria(self, futuro):
         try:
@@ -53,23 +53,31 @@ class RVizCalibrationMarkersNode(Node):
                 self.paneles_teoria = {}
                 
                 for p in lista:
-                    r_track = R.from_euler('xyz', [0.0, p['pitch'], p['yaw']])
-                    p_centro = np.array([p['x'], p['y'], p['z']])
+                    # Cinemática base (Yaw en Z, Pitch en Y)
+                    rot_yaw = R.from_euler('z', p.get('yaw', 0.0))
+                    rot_pitch = R.from_euler('y', p.get('pitch', 0.0))
+                    r_p_global = rot_yaw * rot_pitch
+                    
+                    pos_p_global = np.array([p.get('x', 0.0), p.get('y', 0.0), p.get('z', 0.0)])
                     
                     if 'facetas' in p:
                         for f in p['facetas']:
-                            pos_f = p_centro + r_track.apply(f['offset'])
-                            r_f = r_track * R.from_euler('xyz', [0.0, f['cant_pitch'], f['cant_yaw']])
-                            euler_f = r_f.as_euler('xyz')
+                            offset_local = np.array(f.get('offset', [0.0, 0.0, 0.0]))
+                            pos_f = pos_p_global + r_p_global.apply(offset_local)
                             
+                            # Cinemática local de la faceta (Roll y Pitch)
+                            rot_canting = R.from_euler('xy', [f.get('cant_roll', 0.0), f.get('cant_pitch', 0.0)])
+                            r_f_final = r_p_global * rot_canting
+                            
+                            # Guardamos la posición y la rotación PURA
                             self.paneles_teoria[str(f['id'])] = {
-                                'x': pos_f[0], 'y': pos_f[1], 'z': pos_f[2],
-                                'pitch': euler_f[1], 'yaw': euler_f[2]
+                                'pos': pos_f,
+                                'rot': r_f_final
                             }
                     else:
                         self.paneles_teoria[str(p['id'])] = {
-                            'x': p['x'], 'y': p['y'], 'z': p['z'],
-                            'pitch': p['pitch'], 'yaw': p['yaw']
+                            'pos': pos_p_global,
+                            'rot': r_p_global
                         }
                         
                 self.get_logger().info(f"Puntos de anclaje de flechas listos: {len(self.paneles_teoria)} orígenes.")
@@ -93,12 +101,12 @@ class RVizCalibrationMarkersNode(Node):
                 if p_id not in self.paneles_teoria:
                     continue
                     
+                # Extraemos de memoria
                 panel_teo = self.paneles_teoria[p_id]
-                base_x = panel_teo['x']
-                base_y = panel_teo['y']
-                base_z = panel_teo['z']
+                base_x, base_y, base_z = panel_teo['pos']
+                r_teo_original = panel_teo['rot']
                 
-                # 1. Extraer los vectores básicos
+                # 1. Extraer los vectores básicos ya calculados
                 n_teo = p.get("normal_teorica", [0.0, 0.0, 1.0])
                 n_med = p.get("normal_medida", [0.0, 0.0, 1.0])
                 
@@ -106,14 +114,11 @@ class RVizCalibrationMarkersNode(Node):
                 error_x_rad = p.get("error_x_mrad", 0.0) / 1000.0
                 error_y_rad = p.get("error_y_mrad", 0.0) / 1000.0
                 
-                # 3. RECONSTRUIR LA NORMAL MEDIA
-                pitch = panel_teo.get('pitch', 0.0)
-                yaw = panel_teo.get('yaw', 0.0)
-                r_teo = R.from_euler('xyz', [0.0, pitch, yaw])
-                
+                # 3. RECONSTRUIR LA NORMAL MEDIA PERFECTA
+                # Ya no tenemos que inventarnos el pitch y el yaw, usamos la matriz real
                 r_error = R.from_euler('xy', [error_x_rad, error_y_rad])
                 n_media_ccs = r_error.apply([0.0, 0.0, 1.0])
-                n_media_global = r_teo.apply(n_media_ccs)
+                n_media_global = r_teo_original.apply(n_media_ccs)
                 
                 hash_id = abs(hash(str(p_id))) % 100000
                 

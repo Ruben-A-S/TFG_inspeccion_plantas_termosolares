@@ -45,12 +45,13 @@ def inyectar_paneles(mundo, array_paneles, modelo):
         x = panel['x']
         y = panel['y']
         z = panel['z']
-        pitch = panel['pitch']
-        yaw = panel['yaw']
+        roll = panel.get('roll', 0.0)
+        pitch = panel.get('pitch', 0.0)
+        yaw = panel.get('yaw', 0.0)
         
         # Convertimos los ángulos para Gazebo 
         # (Roll siempre es 0 para un espejo apoyado en el suelo)
-        qx, qy, qz, qw = euler_a_cuaternion(0.0, pitch, yaw)
+        qx, qy, qz, qw = euler_a_cuaternion(roll, pitch, yaw)
         
         # Comando de inyección mediante la CLI de Gazebo
         comando = (

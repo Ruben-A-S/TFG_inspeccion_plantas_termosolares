@@ -46,7 +46,7 @@ class CalibrationNode(Node):
         self.angulo_cam = 0.785  
 
         self.pedir_mapa_teorico()
-        self.get_logger().info("Cerebro HelioPoint iniciado [VERSIÓN FACETAS]. Esperando teoría...")
+        self.get_logger().info("Cerebro HelioPoint iniciado [VERSIÓN FACETAS UNIFICADA]. Esperando teoría...")
 
     def pedir_mapa_teorico(self):
         if not self.cli_teoria.service_is_ready():
@@ -55,7 +55,7 @@ class CalibrationNode(Node):
         self.cli_teoria.call_async(req).add_done_callback(self.al_recibir_teoria)
 
     # ==========================================
-    # LA MAGIA: APLANAR LA TEORÍA PARA LAS FACETAS
+    # LA MAGIA: CINEMÁTICA UNIFICADA EN MEMORIA
     # ==========================================
     def al_recibir_teoria(self, futuro):
         try:
@@ -65,25 +65,32 @@ class CalibrationNode(Node):
                 self.paneles_teoria = {}
                 
                 for p in lista:
-                    # Guardamos la rotación base teórica
-                    r_track = R.from_euler('xyz', [0.0, p['pitch'], p['yaw']])
-                    p_centro = np.array([p['x'], p['y'], p['z']])
+                    # Cinemática del panel base (Yaw -> Z, Pitch -> Y)
+                    rot_yaw = R.from_euler('z', p.get('yaw', 0.0))
+                    rot_pitch = R.from_euler('y', p.get('pitch', 0.0))
+                    r_p_global = rot_yaw * rot_pitch
+                    
+                    pos_p_global = np.array([p.get('x', 0.0), p.get('y', 0.0), p.get('z', 0.0)])
                     
                     if 'facetas' in p:
                         for f in p['facetas']:
-                            pos_f = p_centro + r_track.apply(f['offset'])
-                            # La teoría asume que el cant_pitch y cant_yaw es 0.0, 
-                            # pero por si acaso, lo sumamos (el error se calcula respecto a esto)
-                            r_f = r_track * R.from_euler('xyz', [0.0, f['cant_pitch'], f['cant_yaw']])
-                            euler_f = r_f.as_euler('xyz')
+                            offset_local = np.array(f.get('offset', [0.0, 0.0, 0.0]))
+                            pos_f = pos_p_global + r_p_global.apply(offset_local)
                             
-                            # Registramos cada faceta como si fuera un panel independiente
+                            # Cinemática local de la faceta (Roll -> X, Pitch -> Y)
+                            rot_canting = R.from_euler('xy', [f.get('cant_roll', 0.0), f.get('cant_pitch', 0.0)])
+                            r_f_final = r_p_global * rot_canting
+                            
+                            # Guardamos el objeto Rotation puro para no perder datos
                             self.paneles_teoria[str(f['id'])] = {
-                                'x': pos_f[0], 'y': pos_f[1], 'z': pos_f[2],
-                                'pitch': euler_f[1], 'yaw': euler_f[2]
+                                'pos': pos_f,
+                                'rot': r_f_final
                             }
                     else:
-                        self.paneles_teoria[str(p['id'])] = p
+                        self.paneles_teoria[str(p['id'])] = {
+                            'pos': pos_p_global,
+                            'rot': r_p_global
+                        }
                         
                 self.get_logger().info(f"Plano Teórico Aplanado: {len(self.paneles_teoria)} entidades rastreables.")
         except Exception as e:
@@ -97,12 +104,16 @@ class CalibrationNode(Node):
             self.angulo_cam = float(msg.data[0])
 
     def calcular_vector_medido(self, p_cam, r_dron_base, p_reflex):
+        # r_dron_base es la rotación del dron. Añadimos el pitch de la cámara.
         r_cam_real = r_dron_base * R.from_euler('y', self.angulo_cam, degrees=False)
         p_led = p_cam + r_cam_real.apply(self.d_cam_led)
+        
         v_reflejado = p_cam - p_reflex
         v_reflejado_unitario = v_reflejado / np.linalg.norm(v_reflejado)
+        
         v_incidente = p_led - p_reflex
         v_incidente_unitario = v_incidente / np.linalg.norm(v_incidente)
+        
         n_meas = v_incidente_unitario + v_reflejado_unitario
         return n_meas / np.linalg.norm(n_meas)
 
@@ -124,30 +135,29 @@ class CalibrationNode(Node):
         for dato in datos_filtrados:
             id_panel = str(dato.get("id_panel"))
             
-            # Buscamos la entidad (Ya sea un panel gigante o una mini-faceta)
+            # Buscamos la entidad en memoria
             panel_teo = self.paneles_teoria.get(id_panel)
             if not panel_teo:
                 continue
                 
-            p_teo = np.array([panel_teo['x'], panel_teo['y'], panel_teo['z']])
-            pitch_base = float(panel_teo['pitch'])
-            yaw_base = float(panel_teo['yaw'])
+            p_teo = panel_teo['pos']
+            r_teo_original = panel_teo['rot']
             
-            r_teo_original = R.from_euler('xyz', [0.0, pitch_base, yaw_base])
+            # El vector normal del espejo en reposo (como está tumbado en XY) es el eje Z
             n_teo_global = r_teo_original.apply([0.0, 0.0, 1.0])
             
             try:
                 p_cam = np.array(dato["dron"]["pos"], dtype=float)
-                quat = np.array(dato["dron"]["quat"], dtype=float)
+                quat_dron = np.array(dato["dron"]["quat"], dtype=float)
                 p_rebote_local = np.array(dato["rebote_local"], dtype=float)
                 
-                if np.any(np.isnan(p_cam)) or np.any(np.isnan(quat)) or np.any(np.isnan(p_rebote_local)):
+                if np.any(np.isnan(p_cam)) or np.any(np.isnan(quat_dron)) or np.any(np.isnan(p_rebote_local)):
                     continue
                     
-                if np.linalg.norm(quat) < 1e-6:
+                if np.linalg.norm(quat_dron) < 1e-6:
                     continue
 
-                r_cam = R.from_quat(quat)
+                r_dron = R.from_quat(quat_dron)
                 
             except (KeyError, ValueError, TypeError):
                 continue
@@ -155,9 +165,10 @@ class CalibrationNode(Node):
             r_iter = r_teo_original
             n_meas_global = np.array([0.0, 0.0, 0.0])
             
+            # Newton-Raphson / Producto Cruzado para buscar la orientación real
             for _ in range(3):
                 p_reflex_global = p_teo + r_iter.apply(p_rebote_local)
-                n_meas_global = self.calcular_vector_medido(p_cam, r_cam, p_reflex_global)
+                n_meas_global = self.calcular_vector_medido(p_cam, r_dron, p_reflex_global)
                 n_curr_global = r_iter.apply([0.0, 0.0, 1.0])
                 
                 cross_prod = np.cross(n_curr_global, n_meas_global)
@@ -172,8 +183,12 @@ class CalibrationNode(Node):
                     r_iter = r_corr * r_iter 
             
             n_final_global = r_iter.apply([0.0, 0.0, 1.0])
+            
+            # Deshacemos la rotación global para ver el error en el sistema local del espejo
             n_final_ccs = r_teo_original.inv().apply(n_final_global)
             
+            # Extraemos el error. 
+            # Error Rotación X (Roll) y Error Rotación Y (Pitch)
             error_rotX_rad = -math.atan2(n_final_ccs[1], n_final_ccs[2])
             error_rotY_rad = math.atan2(n_final_ccs[0], n_final_ccs[2])
             

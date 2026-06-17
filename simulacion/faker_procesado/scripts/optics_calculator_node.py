@@ -71,19 +71,28 @@ class OpticsCalculatorNode(Node):
         msg.header.stamp = self.get_clock().now().to_msg()
         
         for p in self.paneles_reales.values():
+            # 1. Cinemática del panel base (Yaw -> Z, Pitch -> Y)
+            rot_yaw = R.from_euler('z', p.get('yaw', 0.0))
+            rot_pitch = R.from_euler('y', p.get('pitch', 0.0))
+            r_track = rot_yaw * rot_pitch
+            
+            p_centro = np.array([p['x'], p['y'], p['z']])
+            
             if 'facetas' in p:
-                r_track = R.from_euler('xyz', [0.0, p['pitch'], p['yaw']])
-                p_centro = np.array([p['x'], p['y'], p['z']])
                 for f in p['facetas']:
                     pose = Pose()
                     pose.position.x, pose.position.y, pose.position.z = p_centro + r_track.apply(f['offset'])
-                    q = (r_track * R.from_euler('xyz', [0.0, f['cant_pitch'], f['cant_yaw']])).as_quat()
+                    
+                    # 2. Cinemática local de la faceta (Roll -> X, Pitch -> Y)
+                    rot_canting = R.from_euler('xy', [f.get('cant_roll', 0.0), f.get('cant_pitch', 0.0)])
+                    q = (r_track * rot_canting).as_quat()
+                    
                     pose.orientation.x, pose.orientation.y, pose.orientation.z, pose.orientation.w = q
                     msg.poses.append(pose)
             else:
                 pose = Pose()
                 pose.position.x, pose.position.y, pose.position.z = p['x'], p['y'], p['z']
-                pose.orientation.x, pose.orientation.y, pose.orientation.z, pose.orientation.w = R.from_euler('xyz', [0.0, p['pitch'], p['yaw']]).as_quat()
+                pose.orientation.x, pose.orientation.y, pose.orientation.z, pose.orientation.w = r_track.as_quat()
                 msg.poses.append(pose)
                 
         self.pub_panels_viz.publish(msg)
@@ -94,7 +103,6 @@ class OpticsCalculatorNode(Node):
     def param_callback(self, msg):
         if len(msg.data) >= 1: self.angulo_cam = msg.data[0]
 
-    # --- NUEVO: ESTA FUNCIÓN SE EJECUTA SIEMPRE A 20 FPS EXACTOS ---
     def bucle_percepcion_hz(self):
         if not self.pose_nueva_disponible or self.pos_dron is None or not self.paneles_reales:
             return
@@ -102,7 +110,6 @@ class OpticsCalculatorNode(Node):
         self.pose_nueva_disponible = False # Reseteamos la bandera
         stamp = self.get_clock().now().to_msg()
         
-        # (El resto del código matemático es exactamente el mismo de antes)
         rot_dron = R.from_quat(self.quat_dron)
         rot_cam = rot_dron * R.from_euler('y', self.angulo_cam)
         
@@ -124,24 +131,29 @@ class OpticsCalculatorNode(Node):
         msg_luz.pose.position.x, msg_luz.pose.position.y, msg_luz.pose.position.z = pos_luz
         self.pub_luz.publish(msg_luz)
 
+        # RECONSTRUCCIÓN DE TARGETS PARA CÁLCULO DE REBOTES
         targets_opticos = []
         for p in self.paneles_reales.values():
+            rot_yaw = R.from_euler('z', p.get('yaw', 0.0))
+            rot_pitch = R.from_euler('y', p.get('pitch', 0.0))
+            r_track = rot_yaw * rot_pitch
+            p_centro = np.array([p['x'], p['y'], p['z']])
+            
             if 'facetas' in p:
-                r_track = R.from_euler('xyz', [0.0, p['pitch'], p['yaw']])
-                p_centro = np.array([p['x'], p['y'], p['z']])
                 w_f = p.get('width_x', 10.4) / 5.0
                 l_f = p.get('length_y', 11.4) / 5.0
                 for f in p['facetas']:
+                    rot_canting = R.from_euler('xy', [f.get('cant_roll', 0.0), f.get('cant_pitch', 0.0)])
                     targets_opticos.append({
                         'id': f['id'], 
                         'pos': p_centro + r_track.apply(f['offset']), 
-                        'rot': r_track * R.from_euler('xyz', [0.0, f['cant_pitch'], f['cant_yaw']]), 
+                        'rot': r_track * rot_canting, 
                         'w': w_f, 'l': l_f
                     })
             else:
                 targets_opticos.append({
-                    'id': p['id'], 'pos': np.array([p['x'], p['y'], p['z']]), 
-                    'rot': R.from_euler('xyz', [0.0, p['pitch'], p['yaw']]), 
+                    'id': p['id'], 'pos': p_centro, 
+                    'rot': r_track, 
                     'w': p.get('width_x', 10.4), 'l': p.get('length_y', 11.4)
                 })
 
@@ -188,7 +200,6 @@ class OpticsCalculatorNode(Node):
         self.hilo_gz = threading.Thread(target=self.escuchar_gazebo, daemon=True)
         self.hilo_gz.start()
 
-    # --- LECTURA PURA Y RÁPIDA DE GAZEBO ---
     def escuchar_gazebo(self):
         comando = ["gz", "topic", "-e", "-t", f"/world/{self.nombre_mundo}/pose/info"]
         proc = subprocess.Popen(comando, stdout=subprocess.PIPE, text=True)
@@ -218,7 +229,7 @@ class OpticsCalculatorNode(Node):
 
             if "}" in linea and in_ori:
                 self.pos_dron, self.quat_dron = np.array(c_p), np.array(c_q)
-                self.pose_nueva_disponible = True  # ¡Avisamos al bucle de arriba de que hay datos frescos!
+                self.pose_nueva_disponible = True  
                 leyendo_dron = in_pos = in_ori = False
 
 def main(args=None):

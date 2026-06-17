@@ -42,14 +42,12 @@ class RvizVisualizerNode(Node):
         self.pub_marcadores = self.create_publisher(MarkerArray, '/visualization/scene', 10)
         
         # --- SUSCRIPCIONES ---
-        # --- SUSCRIPCIONES ---
         self.create_subscription(String, '/sim_status/panel_updates', self.actualizar_paneles_callback, 10)
         self.create_subscription(PoseStamped, '/data/drone', self.dron_callback, qos_profile_sensor_data)
         self.create_subscription(PoseStamped, '/data/camera', self.camara_callback, qos_profile_sensor_data)
         self.create_subscription(PoseStamped, '/data/light', self.luz_callback, qos_profile_sensor_data)
         self.create_subscription(String, '/inspection/raw_data', self.raw_data_callback, qos_profile_sensor_data)
         
-
         # --- TIMER DE DIBUJO (10 Hz) ---
         self.timer = self.create_timer(0.1, self.publicar_escena)
 
@@ -57,7 +55,7 @@ class RvizVisualizerNode(Node):
         self.get_logger().info("Visualizador RViz iniciado. Modo Facetas activado.")
 
     # ==========================================
-    # OBTENCIÓN DE MAPA (Igual que la VirtualCam)
+    # OBTENCIÓN DE MAPA
     # ==========================================
     def pedir_mapa_inicial(self):
         if not self.cli_realidad.service_is_ready(): return
@@ -104,18 +102,26 @@ class RvizVisualizerNode(Node):
         msg_array = MarkerArray()
         stamp = self.get_clock().now().to_msg()
 
-        # 1. DIBUJAR PANELES (Soporte para MODO AVANZADO)
+        # 1. DIBUJAR PANELES (Cinemática Unificada)
         marker_id = 0
         for p in self.paneles_reales:
-            pos_p_global = np.array([p['x'], p['y'], p['z']])
-            r_p_global = R.from_euler('xyz', [0.0, p['pitch'], p['yaw']])
+            pos_p_global = np.array([p.get('x', 0.0), p.get('y', 0.0), p.get('z', 0.0)])
+            
+            # Cinemática del panel base (Yaw -> Z, Pitch -> Y)
+            rot_yaw = R.from_euler('z', p.get('yaw', 0.0))
+            rot_pitch = R.from_euler('y', p.get('pitch', 0.0))
+            r_p_global = rot_yaw * rot_pitch
 
             if 'facetas' in p:
                 w_f = p.get('width_x', 10.4) / 5.0
                 l_f = p.get('length_y', 11.4) / 5.0
                 for f in p['facetas']:
-                    pos_f = pos_p_global + r_p_global.apply(f['offset'])
-                    r_f = r_p_global * R.from_euler('xyz', [0.0, f['cant_pitch'], f['cant_yaw']])
+                    offset_local = np.array(f.get('offset', [0.0, 0.0, 0.0]))
+                    pos_f = pos_p_global + r_p_global.apply(offset_local)
+                    
+                    # Cinemática local de la faceta (Roll -> X, Pitch -> Y)
+                    rot_canting = R.from_euler('xy', [f.get('cant_roll', 0.0), f.get('cant_pitch', 0.0)])
+                    r_f = r_p_global * rot_canting
                     
                     pose = Pose()
                     pose.position.x, pose.position.y, pose.position.z = pos_f
