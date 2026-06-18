@@ -13,6 +13,9 @@ from geometry_msgs.msg import Pose, PoseArray, PoseStamped
 from std_srvs.srv import Trigger 
 
 class OpticsCalculatorNode(Node):
+    """
+    
+    """
     def __init__(self, nombre_mundo="prueba1", modelo_dron="x500"):
         super().__init__('optics_calculator_node')
         
