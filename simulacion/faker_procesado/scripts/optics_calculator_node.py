@@ -8,36 +8,37 @@ import rclpy
 from rclpy.node import Node
 from rclpy.qos import qos_profile_sensor_data
 from scipy.spatial.transform import Rotation as R
+from scipy.spatial import KDTree
 from std_msgs.msg import Float64MultiArray, String
 from geometry_msgs.msg import Pose, PoseArray, PoseStamped
-from std_srvs.srv import Trigger 
+from std_srvs.srv import Trigger
 
 class OpticsCalculatorNode(Node):
-    """
-    
-    """
     def __init__(self, nombre_mundo="prueba1", modelo_dron="x500"):
         super().__init__('optics_calculator_node')
         
         self.nombre_mundo = nombre_mundo
         self.modelo_dron = modelo_dron
         
-        # --- ESTADO INTERNO ---
-        self.paneles_reales = {} 
         self.pos_dron = None
         self.quat_dron = None
         self.angulo_cam = 0.785   
         self.distancia_max_vision = 500.0 
-        
-        # Bandera para sincronizar el hilo lector y el hilo calculador
         self.pose_nueva_disponible = False
+
+        self.fov_grados = 90.0
+        self.limite_coseno_fov = np.cos(np.radians(self.fov_grados / 2.0))
+
+        # MEMORIA RAM PURA: Aquí guardamos el JSON
+        self.paneles_memoria = []
+        self.coords_paneles = []
+        self.tamanios_paneles = {}
+        self.arbol_kd = None
 
         self.cli_realidad = self.create_client(Trigger, 'get_panel_real')
         
-        # Usamos qos_profile_sensor_data para evitar colas (Drop old messages)
         self.pub_datos_raw = self.create_publisher(String, '/inspection/raw_data', qos_profile_sensor_data)
         self.pub_rebotes_viz = self.create_publisher(PoseArray, '/data/impacts', qos_profile_sensor_data)
-        self.pub_panels_viz = self.create_publisher(PoseArray, '/data/panels', 10)
         self.pub_dron = self.create_publisher(PoseStamped, '/data/drone', qos_profile_sensor_data)
         self.pub_camara = self.create_publisher(PoseStamped, '/data/camera', qos_profile_sensor_data)
         self.pub_luz = self.create_publisher(PoseStamped, '/data/light', qos_profile_sensor_data)
@@ -45,13 +46,14 @@ class OpticsCalculatorNode(Node):
         self.create_subscription(Float64MultiArray, '/control_param', self.param_callback, qos_profile_sensor_data)
         self.create_subscription(String, '/sim_status/panel_updates', self.panel_update_callback, 10)
 
-        # --- NUEVO: BUCLE DE PERCEPCIÓN DESACOPLADO A 20 FPS ---
         self.create_timer(0.05, self.bucle_percepcion_hz)
 
         self.pedir_mapa_completo()
         self.lanzar_espia_gazebo()
-        
-        self.get_logger().info("Calculadora Óptica Iniciada [MODO ANTI-LAG ACTIVO].")
+        self.get_logger().info("Calculadora Óptica [KD-Tree + RAM Pura] iniciada. Cero latencia.")
+
+    def panel_update_callback(self, msg):
+        self.pedir_mapa_completo()
 
     def pedir_mapa_completo(self):
         if not self.cli_realidad.service_is_ready(): return
@@ -62,59 +64,30 @@ class OpticsCalculatorNode(Node):
         try:
             res = futuro.result()
             if res.success:
-                lista = json.loads(res.message)
-                self.paneles_reales = {p['id']: p for p in lista}
-                self.publicar_estatica_paneles()
-        except Exception as e:
-            self.get_logger().error(f"Error servicio: {e}")
-
-    def publicar_estatica_paneles(self):
-        msg = PoseArray()
-        msg.header.frame_id = "world"
-        msg.header.stamp = self.get_clock().now().to_msg()
-        
-        for p in self.paneles_reales.values():
-            # 1. Cinemática del panel base (Yaw -> Z, Pitch -> Y)
-            rot_yaw = R.from_euler('z', p.get('yaw', 0.0))
-            rot_pitch = R.from_euler('y', p.get('pitch', 0.0))
-            r_track = rot_yaw * rot_pitch
-            
-            p_centro = np.array([p['x'], p['y'], p['z']])
-            
-            if 'facetas' in p:
-                for f in p['facetas']:
-                    pose = Pose()
-                    pose.position.x, pose.position.y, pose.position.z = p_centro + r_track.apply(f['offset'])
-                    
-                    # 2. Cinemática local de la faceta (Roll -> X, Pitch -> Y)
-                    rot_canting = R.from_euler('xy', [f.get('cant_roll', 0.0), f.get('cant_pitch', 0.0)])
-                    q = (r_track * rot_canting).as_quat()
-                    
-                    pose.orientation.x, pose.orientation.y, pose.orientation.z, pose.orientation.w = q
-                    msg.poses.append(pose)
-            else:
-                pose = Pose()
-                pose.position.x, pose.position.y, pose.position.z = p['x'], p['y'], p['z']
-                pose.orientation.x, pose.orientation.y, pose.orientation.z, pose.orientation.w = r_track.as_quat()
-                msg.poses.append(pose)
+                self.paneles_memoria = json.loads(res.message)
+                self.nombres_paneles = [p['id'] for p in self.paneles_memoria]
+                self.coords_paneles = [[p['x'], p['y'], p['z']] for p in self.paneles_memoria]
                 
-        self.pub_panels_viz.publish(msg)
-
-    def panel_update_callback(self, msg):
-        self.pedir_mapa_completo()
+                if self.coords_paneles:
+                    self.arbol_kd = KDTree(self.coords_paneles)
+                
+                self.tamanios_paneles = {p['id']: {'w': p.get('width_x', 10.4), 'l': p.get('length_y', 11.4)} for p in self.paneles_memoria}
+        except Exception as e:
+            self.get_logger().error(f"Error procesando metadatos: {e}")
 
     def param_callback(self, msg):
         if len(msg.data) >= 1: self.angulo_cam = msg.data[0]
 
     def bucle_percepcion_hz(self):
-        if not self.pose_nueva_disponible or self.pos_dron is None or not self.paneles_reales:
+        if not self.pose_nueva_disponible or self.pos_dron is None or self.arbol_kd is None:
             return
             
-        self.pose_nueva_disponible = False # Reseteamos la bandera
+        self.pose_nueva_disponible = False 
         stamp = self.get_clock().now().to_msg()
         
         rot_dron = R.from_quat(self.quat_dron)
         rot_cam = rot_dron * R.from_euler('y', self.angulo_cam)
+        eje_optico = rot_cam.apply([1, 0, 0])
         
         msg_dron = PoseStamped()
         msg_dron.header.frame_id, msg_dron.header.stamp = "world", stamp
@@ -134,66 +107,72 @@ class OpticsCalculatorNode(Node):
         msg_luz.pose.position.x, msg_luz.pose.position.y, msg_luz.pose.position.z = pos_luz
         self.pub_luz.publish(msg_luz)
 
-        # RECONSTRUCCIÓN DE TARGETS PARA CÁLCULO DE REBOTES
-        targets_opticos = []
-        for p in self.paneles_reales.values():
-            rot_yaw = R.from_euler('z', p.get('yaw', 0.0))
-            rot_pitch = R.from_euler('y', p.get('pitch', 0.0))
-            r_track = rot_yaw * rot_pitch
-            p_centro = np.array([p['x'], p['y'], p['z']])
-            
-            if 'facetas' in p:
-                w_f = p.get('width_x', 10.4) / 5.0
-                l_f = p.get('length_y', 11.4) / 5.0
-                for f in p['facetas']:
-                    rot_canting = R.from_euler('xy', [f.get('cant_roll', 0.0), f.get('cant_pitch', 0.0)])
-                    targets_opticos.append({
-                        'id': f['id'], 
-                        'pos': p_centro + r_track.apply(f['offset']), 
-                        'rot': r_track * rot_canting, 
-                        'w': w_f, 'l': l_f
-                    })
-            else:
-                targets_opticos.append({
-                    'id': p['id'], 'pos': p_centro, 
-                    'rot': r_track, 
-                    'w': p.get('width_x', 10.4), 'l': p.get('length_y', 11.4)
-                })
-
         impactos = []
         msg_viz = PoseArray()
         msg_viz.header.frame_id, msg_viz.header.stamp = "world", stamp
-        eje_optico = rot_cam.apply([1, 0, 0])
 
-        for t in targets_opticos:
-            vec_dir = (t['pos'] - self.pos_dron)
-            dist = np.linalg.norm(vec_dir)
-            if dist > self.distancia_max_vision or np.dot(eje_optico, vec_dir/dist) < 0.1: continue
+        indices_cercanos = self.arbol_kd.query_ball_point(self.pos_dron, r=self.distancia_max_vision)
 
-            inv_rot_t = t['rot'].inv()
-            cam_loc = inv_rot_t.apply(self.pos_dron - t['pos'])
-            luz_loc = inv_rot_t.apply(pos_luz - t['pos'])
-
-            if cam_loc[2] <= 0: continue 
-
-            ref_loc = np.array([luz_loc[0], luz_loc[1], -luz_loc[2]])
-            denom = cam_loc[2] - ref_loc[2]
-            if abs(denom) < 1e-6: continue
+        for idx in indices_cercanos:
+            p = self.paneles_memoria[idx]
+            id_panel = p['id']
+            pos_p_global = np.array([p['x'], p['y'], p['z']])
             
-            i_loc = ref_loc + (-ref_loc[2] / denom) * (cam_loc - ref_loc)
+            vec_dir_poste = pos_p_global - self.pos_dron
+            dist = np.linalg.norm(vec_dir_poste)
+            if dist < 1e-3: continue
+            
+            coseno_angulo = np.dot(eje_optico, vec_dir_poste / dist)
+            if coseno_angulo < self.limite_coseno_fov:
+                continue 
+                
+            tam = self.tamanios_paneles.get(id_panel, {'w': 10.4, 'l': 11.4})
+            w_f = tam['w'] / 5.0
+            l_f = tam['l'] / 5.0
 
-            if abs(i_loc[0]) <= (t['w']/2) and abs(i_loc[1]) <= (t['l']/2):
-                i_world = t['pos'] + t['rot'].apply(i_loc)
-                impactos.append({
-                    "id_panel": t['id'],
-                    "rebote_local": i_loc.tolist(),
-                    "rebote_world_debug": i_world.tolist(),
-                    "pose_panel": {"pos": t['pos'].tolist(), "quat": t['rot'].as_quat().tolist()},
-                    "dron": {"pos": self.pos_dron.tolist(), "quat": self.quat_dron.tolist()}
-                })
-                pv = Pose()
-                pv.position.x, pv.position.y, pv.position.z = i_world
-                msg_viz.poses.append(pv)
+            # TU CINEMÁTICA ORIGINAL (Síncrona y robusta)
+            rot_yaw = R.from_euler('z', p.get('yaw', 0.0))
+            rot_pitch = R.from_euler('y', p.get('pitch', 0.0))
+            r_p_global = rot_yaw * rot_pitch
+
+            if 'facetas' in p:
+                for f in p['facetas']:
+                    id_faceta_raw = f"{id_panel}_f{f['id']}" if not f['id'].startswith(id_panel) else f['id']
+                    
+                    offset_local = np.array(f.get('offset', [0.0, 0.0, 0.0]))
+                    pos_f = pos_p_global + r_p_global.apply(offset_local)
+                    
+                    rot_canting = R.from_euler('xy', [f.get('cant_roll', 0.0), f.get('cant_pitch', 0.0)])
+                    rot_f = r_p_global * rot_canting
+
+                    inv_rot_f = rot_f.inv()
+                    cam_loc = inv_rot_f.apply(self.pos_dron - pos_f)
+                    luz_loc = inv_rot_f.apply(pos_luz - pos_f)
+
+                    if cam_loc[2] <= 0: continue 
+
+                    ref_loc = np.array([luz_loc[0], luz_loc[1], -luz_loc[2]])
+                    denom = cam_loc[2] - ref_loc[2]
+                    if abs(denom) < 1e-6: continue
+                    
+                    i_loc = ref_loc + (-ref_loc[2] / denom) * (cam_loc - ref_loc)
+
+                    if abs(i_loc[0]) <= (w_f/2) and abs(i_loc[1]) <= (l_f/2):
+                        i_world = pos_f + rot_f.apply(i_loc)
+                        impactos.append({
+                            "id_panel": id_faceta_raw,
+                            "rebote_local": i_loc.tolist(),
+                            "rebote_world_debug": i_world.tolist(),
+                            "dron": {
+                                "pos": self.pos_dron.tolist(),
+                                "quat": self.quat_dron.tolist()
+                            }
+                        })
+                        pv = Pose()
+                        pv.position.x, pv.position.y, pv.position.z = i_world
+                        msg_viz.poses.append(pv)
+            else:
+                pass # Lógica panel simple si aplicara
 
         if impactos:
             self.pub_datos_raw.publish(String(data=json.dumps(impactos)))
@@ -204,19 +183,16 @@ class OpticsCalculatorNode(Node):
         self.hilo_gz.start()
 
     def escuchar_gazebo(self):
-        comando = ["gz", "topic", "-e", "-t", f"/world/{self.nombre_mundo}/pose/info"]
-        proc = subprocess.Popen(comando, stdout=subprocess.PIPE, text=True)
-        target = f'name: "{self.modelo_dron}_0"'
+        # FILTRO LINUX: Extrae solo el dron desde el tópico global
+        comando = f"gz topic -e -t /world/{self.nombre_mundo}/pose/info | grep --line-buffered -A 12 'name: \"{self.modelo_dron}_0\"'"
+        proc = subprocess.Popen(comando, stdout=subprocess.PIPE, text=True, shell=True)
         
-        leyendo_dron, in_pos, in_ori = False, False, False
+        in_pos, in_ori = False, False
         c_p = [0.0, 0.0, 0.0]
         c_q = [0.0, 0.0, 0.0, 1.0]
 
         for linea in iter(proc.stdout.readline, ''):
             linea = linea.strip()
-            if target in linea: leyendo_dron = True; continue
-            if not leyendo_dron: continue
-
             if "position" in linea: in_pos, in_ori = True, False; continue
             if "orientation" in linea: in_pos, in_ori = False, True; continue
             
@@ -233,7 +209,7 @@ class OpticsCalculatorNode(Node):
             if "}" in linea and in_ori:
                 self.pos_dron, self.quat_dron = np.array(c_p), np.array(c_q)
                 self.pose_nueva_disponible = True  
-                leyendo_dron = in_pos = in_ori = False
+                in_pos = in_ori = False
 
 def main(args=None):
     rclpy.init(args=args)
@@ -241,8 +217,6 @@ def main(args=None):
     try: rclpy.spin(nodo)
     except KeyboardInterrupt: pass
     finally:
-        if rclpy.ok():
-            nodo.destroy_node()
-            rclpy.shutdown()
+        if rclpy.ok(): nodo.destroy_node(); rclpy.shutdown()
 
 if __name__ == "__main__": main()

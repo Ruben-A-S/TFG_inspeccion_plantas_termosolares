@@ -131,6 +131,7 @@ class MapLoaderNode(Node):
 
             # 3. FRAME: Cada faceta (Offset + ajuste fino)
             # inclinacion_id -> faceta_id
+            """
             for faceta in panel.get('facetas', []):
                 t_faceta = TransformStamped()
                 t_faceta.header.stamp = now
@@ -147,7 +148,7 @@ class MapLoaderNode(Node):
                 t_faceta.transform.rotation.x, t_faceta.transform.rotation.y = q_f[0], q_f[1]
                 t_faceta.transform.rotation.z, t_faceta.transform.rotation.w = q_f[2], q_f[3]
                 self.tf_broadcaster.sendTransform(t_faceta)
-                
+            """
     def get_panel_theory_callback(self, request, response):
         response.success = True
         response.message = json.dumps(self.paneles_teoria)

@@ -1,62 +1,38 @@
 #!/usr/bin/env python3
 
 import json
-import numpy as np
 import rclpy
 from rclpy.node import Node
+from rclpy.qos import qos_profile_sensor_data
 from std_msgs.msg import String
-from geometry_msgs.msg import Point, PoseArray, PoseStamped, Pose
-from scipy.spatial.transform import Rotation as R
+from geometry_msgs.msg import Point, PoseStamped
 from visualization_msgs.msg import Marker, MarkerArray
 from std_srvs.srv import Trigger
-from rclpy.qos import qos_profile_sensor_data
-
-def vector_a_cuaternion(vector_dir):
-    """Convierte un vector direccional a un cuaternión alineado con el eje X."""
-    norma = np.linalg.norm(vector_dir)
-    if norma < 1e-6:
-        return [0.0, 0.0, 0.0, 1.0]
-    
-    v_unitario = vector_dir / norma
-    try:
-        rotacion, _ = R.align_vectors([v_unitario], [[1.0, 0.0, 0.0]])
-        return rotacion.as_quat().tolist()
-    except:
-        return [0.0, 0.0, 0.0, 1.0]
+from builtin_interfaces.msg import Time, Duration
+from scipy.spatial.transform import Rotation as R # Añadido para el canting estático
 
 class RvizVisualizerNode(Node):
     def __init__(self):
         super().__init__('rviz_visualizer_node')
         
-        # --- ESTADO INTERNO ---
         self.dron_pose = None
         self.cam_pose = None
         self.luz_pose = None
-        self.paneles_reales = []
         self.impactos_data = [] 
 
-        # --- CLIENTE DE SERVICIO ---
         self.cli_realidad = self.create_client(Trigger, 'get_panel_real')
-
-        # --- PUBLICADOR ---
         self.pub_marcadores = self.create_publisher(MarkerArray, '/visualization/scene', 10)
         
-        # --- SUSCRIPCIONES ---
         self.create_subscription(String, '/sim_status/panel_updates', self.actualizar_paneles_callback, 10)
         self.create_subscription(PoseStamped, '/data/drone', self.dron_callback, qos_profile_sensor_data)
         self.create_subscription(PoseStamped, '/data/camera', self.camara_callback, qos_profile_sensor_data)
         self.create_subscription(PoseStamped, '/data/light', self.luz_callback, qos_profile_sensor_data)
         self.create_subscription(String, '/inspection/raw_data', self.raw_data_callback, qos_profile_sensor_data)
         
-        # --- TIMER DE DIBUJO (10 Hz) ---
-        self.timer = self.create_timer(0.1, self.publicar_escena)
-
+        self.timer = self.create_timer(0.1, self.publicar_escena_dinamica)
         self.pedir_mapa_inicial()
-        self.get_logger().info("Visualizador RViz iniciado. Modo Facetas activado.")
+        self.get_logger().info("Visualizador RViz [Zero-Math Dinámico + Anclaje Base] Inicializado.")
 
-    # ==========================================
-    # OBTENCIÓN DE MAPA
-    # ==========================================
     def pedir_mapa_inicial(self):
         if not self.cli_realidad.service_is_ready(): return
         req = Trigger.Request()
@@ -65,155 +41,135 @@ class RvizVisualizerNode(Node):
     def al_recibir_mapa_srv(self, futuro):
         try:
             res = futuro.result()
-            self.paneles_reales = json.loads(res.message)
+            paneles = json.loads(res.message)
+            msg_array = MarkerArray()
+            stamp_zero = Time(sec=0, nanosec=0)
+            
+            m_clear = Marker()
+            m_clear.action = Marker.DELETEALL
+            msg_array.markers.append(m_clear)
+            
+            marker_id = 0
+            for p in paneles:
+                id_panel = p['id']
+                
+                if 'facetas' in p:
+                    w_f = p.get('width_x', 10.4) / 5.0
+                    l_f = p.get('length_y', 11.4) / 5.0
+                    for f in p['facetas']:
+                        m = Marker()
+                        # TRUCO: Anclamos a la inclinacion global, que SÍ se publica en TF2
+                        m.header.frame_id = f"inclinacion_{id_panel}" 
+                        m.header.stamp = stamp_zero               
+                        m.ns = "heliostatos_estaticos"
+                        m.id = marker_id
+                        m.type = Marker.LINE_STRIP
+                        m.action = Marker.ADD
+                        
+                        # Le aplicamos la pose local (solo se calcula una vez al cargar)
+                        offset = f.get('offset', [0.0, 0.0, 0.0])
+                        m.pose.position.x = float(offset[0])
+                        m.pose.position.y = float(offset[1])
+                        m.pose.position.z = float(offset[2])
+                        
+                        rot_canting = R.from_euler('xy', [f.get('cant_roll', 0.0), f.get('cant_pitch', 0.0)])
+                        q = rot_canting.as_quat()
+                        m.pose.orientation.x, m.pose.orientation.y, m.pose.orientation.z, m.pose.orientation.w = q[0], q[1], q[2], q[3]
+                        
+                        m.scale.x = 0.1 
+                        m.color.r, m.color.g, m.color.b, m.color.a = 0.0, 1.0, 0.0, 1.0
+                        
+                        hw, hl = w_f / 2.0, l_f / 2.0
+                        m.points = [
+                            Point(x=hw, y=hl, z=0.0), Point(x=-hw, y=hl, z=0.0),
+                            Point(x=-hw, y=-hl, z=0.0), Point(x=hw, y=-hl, z=0.0),
+                            Point(x=hw, y=hl, z=0.0)
+                        ]
+                        msg_array.markers.append(m)
+                        marker_id += 1
+                else:
+                    m = Marker()
+                    m.header.frame_id = f"inclinacion_{id_panel}"
+                    m.header.stamp = stamp_zero
+                    m.ns = "heliostatos_estaticos"
+                    m.id = marker_id
+                    m.type = Marker.LINE_STRIP
+                    m.action = Marker.ADD
+                    m.pose.orientation.w = 1.0
+                    m.scale.x = 0.1
+                    m.color.r, m.color.g, m.color.b, m.color.a = 0.0, 1.0, 0.0, 1.0
+                    
+                    hw = p.get('width_x', 10.4) / 2.0
+                    hl = p.get('length_y', 11.4) / 2.0
+                    m.points = [
+                        Point(x=hw, y=hl, z=0.0), Point(x=-hw, y=hl, z=0.0),
+                        Point(x=-hw, y=-hl, z=0.0), Point(x=hw, y=-hl, z=0.0),
+                        Point(x=hw, y=hl, z=0.0)
+                    ]
+                    msg_array.markers.append(m)
+                    marker_id += 1
+                    
+            self.pub_marcadores.publish(msg_array)
         except Exception as e:
-            self.get_logger().error(f"Error cargando mapa para RViz: {e}")
+            self.get_logger().error(f"Error cargando mapa en RViz: {e}")
 
     def actualizar_paneles_callback(self, msg):
         self.pedir_mapa_inicial()
 
-    # ==========================================
-    # CALLBACKS
-    # ==========================================
-
-    def dron_callback(self, msg): 
-        self.dron_pose = msg
-
-    def camara_callback(self, msg): 
-        self.cam_pose = msg
-
-    def luz_callback(self, msg): 
-        self.luz_pose = msg
-    
+    def dron_callback(self, msg): self.dron_pose = msg
+    def camara_callback(self, msg): self.cam_pose = msg
+    def luz_callback(self, msg): self.luz_pose = msg
     def raw_data_callback(self, msg):
-        try:
-            self.impactos_data = json.loads(msg.data)
-        except:
-            self.impactos_data = []
+        try: self.impactos_data = json.loads(msg.data)
+        except: self.impactos_data = []
 
-    # ==========================================
-    # BUCLE DE RENDERIZADO 3D (RVIZ)
-    # ==========================================
-
-    def publicar_escena(self):
-        if not self.dron_pose:
-            return
+    def publicar_escena_dinamica(self):
+        if not self.dron_pose: return
 
         msg_array = MarkerArray()
-        stamp = self.get_clock().now().to_msg()
+        stamp_ahora = self.get_clock().now().to_msg()
+        lifetime_msg = Duration(sec=0, nanosec=150000000)
 
-        # 1. DIBUJAR PANELES (Cinemática Unificada)
-        marker_id = 0
-        for p in self.paneles_reales:
-            pos_p_global = np.array([p.get('x', 0.0), p.get('y', 0.0), p.get('z', 0.0)])
-            
-            # Cinemática del panel base (Yaw -> Z, Pitch -> Y)
-            rot_yaw = R.from_euler('z', p.get('yaw', 0.0))
-            rot_pitch = R.from_euler('y', p.get('pitch', 0.0))
-            r_p_global = rot_yaw * rot_pitch
-
-            if 'facetas' in p:
-                w_f = p.get('width_x', 10.4) / 5.0
-                l_f = p.get('length_y', 11.4) / 5.0
-                for f in p['facetas']:
-                    offset_local = np.array(f.get('offset', [0.0, 0.0, 0.0]))
-                    pos_f = pos_p_global + r_p_global.apply(offset_local)
-                    
-                    # Cinemática local de la faceta (Roll -> X, Pitch -> Y)
-                    rot_canting = R.from_euler('xy', [f.get('cant_roll', 0.0), f.get('cant_pitch', 0.0)])
-                    r_f = r_p_global * rot_canting
-                    
-                    pose = Pose()
-                    pose.position.x, pose.position.y, pose.position.z = pos_f
-                    pose.orientation.x, pose.orientation.y, pose.orientation.z, pose.orientation.w = r_f.as_quat()
-                    
-                    # Le pasamos el ancho/largo exacto de la faceta
-                    msg_array.markers.append(self.crear_marcador_panel(marker_id, pose, w_f/2, l_f/2, stamp))
-                    marker_id += 1
-            else:
-                pose = Pose()
-                pose.position.x, pose.position.y, pose.position.z = pos_p_global
-                pose.orientation.x, pose.orientation.y, pose.orientation.z, pose.orientation.w = r_p_global.as_quat()
-                
-                w = p.get('width_x', 10.4) / 2
-                l = p.get('length_y', 11.4) / 2
-                msg_array.markers.append(self.crear_marcador_panel(marker_id, pose, w, l, stamp))
-                marker_id += 1
-
-        # 2. DIBUJAR DRON Y CÁMARA
-        p_dron = self.pose_to_numpy(self.dron_pose.pose.position)
-        q_dron = self.quat_to_list(self.dron_pose.pose.orientation)
-        msg_array.markers.append(self.crear_flecha("dron", 998, p_dron, q_dron, [0.0, 0.5, 1.0], stamp))
+        m_dron = Marker()
+        m_dron.header.frame_id, m_dron.header.stamp = "world", stamp_ahora
+        m_dron.ns, m_dron.id, m_dron.type = "dron", 998, Marker.ARROW
+        m_dron.pose = self.dron_pose.pose
+        m_dron.scale.x, m_dron.scale.y, m_dron.scale.z = 2.0, 0.2, 0.2
+        m_dron.color.r, m_dron.color.g, m_dron.color.b, m_dron.color.a = 0.0, 0.5, 1.0, 1.0
+        m_dron.lifetime = lifetime_msg
+        msg_array.markers.append(m_dron)
 
         if self.cam_pose:
-            q_cam = self.quat_to_list(self.cam_pose.pose.orientation)
-            msg_array.markers.append(self.crear_flecha("camara", 999, p_dron, q_cam, [1.0, 0.0, 0.0], stamp))
+            m_cam = Marker()
+            m_cam.header.frame_id, m_cam.header.stamp = "world", stamp_ahora
+            m_cam.ns, m_cam.id, m_cam.type = "camara", 999, Marker.ARROW
+            m_cam.pose = self.cam_pose.pose
+            m_cam.scale.x, m_cam.scale.y, m_cam.scale.z = 2.0, 0.2, 0.2
+            m_cam.color.r, m_cam.color.g, m_cam.color.b, m_cam.color.a = 1.0, 0.0, 0.0, 1.0
+            m_cam.lifetime = lifetime_msg
+            msg_array.markers.append(m_cam)
 
-        # 3. DIBUJAR RAYOS / IMPACTOS
         if self.luz_pose:
             for i, impacto in enumerate(self.impactos_data):
-                p_rebote_world = np.array(impacto.get("rebote_world_debug", [0,0,0]))
-                if not np.array_equal(p_rebote_world, [0,0,0]):
-                    m_impacto = Marker()
-                    m_impacto.header.frame_id = "world"
-                    m_impacto.header.stamp = stamp
-                    m_impacto.ns = "impactos"
-                    m_impacto.id = i
-                    m_impacto.type = Marker.SPHERE
-                    m_impacto.pose.position.x, m_impacto.pose.position.y, m_impacto.pose.position.z = p_rebote_world
-                    m_impacto.scale.x, m_impacto.scale.y, m_impacto.scale.z = 0.3, 0.3, 0.3
-                    m_impacto.color.r, m_impacto.color.g, m_impacto.color.b, m_impacto.color.a = 1.0, 1.0, 0.0, 1.0
-                    msg_array.markers.append(m_impacto)
+                p_rebote_world = impacto.get("rebote_world_debug", [0, 0, 0])
+                if p_rebote_world != [0, 0, 0]:
+                    m_imp = Marker()
+                    m_imp.header.frame_id, m_imp.header.stamp = "world", stamp_ahora
+                    m_imp.ns, m_imp.id, m_imp.type = "impactos", i, Marker.SPHERE
+                    m_imp.pose.position.x, m_imp.pose.position.y, m_imp.pose.position.z = p_rebote_world
+                    m_imp.scale.x, m_imp.scale.y, m_imp.scale.z = 0.4, 0.4, 0.4
+                    m_imp.color.r, m_imp.color.g, m_imp.color.b, m_imp.color.a = 1.0, 1.0, 0.0, 1.0
+                    m_imp.lifetime = lifetime_msg
+                    msg_array.markers.append(m_imp)
 
         self.pub_marcadores.publish(msg_array)
 
-    # ==========================================
-    # UTILIDADES
-    # ==========================================
-
-    def crear_marcador_panel(self, id, pose, hw, hl, stamp):
-        m = Marker()
-        m.header.frame_id = "world"
-        m.header.stamp = stamp
-        m.ns = "heliostatos"
-        m.id = id
-        m.type = Marker.LINE_STRIP
-        m.action = Marker.ADD
-        m.pose = pose
-        m.scale.x = 0.1 
-        m.color.r, m.color.g, m.color.b, m.color.a = 0.0, 1.0, 0.0, 1.0
-        
-        # Ahora recibe hw (Half-Width) y hl (Half-Length) dinámicamente
-        m.points = [
-            Point(x=hw, y=hl, z=0.0), Point(x=-hw, y=hl, z=0.0),
-            Point(x=-hw, y=-hl, z=0.0), Point(x=hw, y=-hl, z=0.0),
-            Point(x=hw, y=hl, z=0.0)
-        ]
-        return m
-
-    def crear_flecha(self, ns, id, pos, quat, color, stamp):
-        m = Marker()
-        m.header.frame_id = "world"
-        m.header.stamp = stamp
-        m.ns = ns
-        m.id = id
-        m.type = Marker.ARROW
-        m.pose.position.x, m.pose.position.y, m.pose.position.z = pos
-        m.pose.orientation.x, m.pose.orientation.y, m.pose.orientation.z, m.pose.orientation.w = quat
-        m.scale.x, m.scale.y, m.scale.z = 2.0, 0.2, 0.2
-        m.color.r, m.color.g, m.color.b, m.color.a = color[0], color[1], color[2], 1.0
-        return m
-
-    def pose_to_numpy(self, pos): return np.array([pos.x, pos.y, pos.z])
-    def quat_to_list(self, q): return [q.x, q.y, q.z, q.w]
 
 def main(args=None):
     rclpy.init(args=args)
     nodo = RvizVisualizerNode()
-    try:
-        rclpy.spin(nodo)
-    except KeyboardInterrupt:
-        pass
+    try: rclpy.spin(nodo)
+    except KeyboardInterrupt: pass
     finally:
         if rclpy.ok():
             nodo.destroy_node()

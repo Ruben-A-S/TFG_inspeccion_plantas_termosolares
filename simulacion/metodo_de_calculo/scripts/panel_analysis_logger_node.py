@@ -118,13 +118,40 @@ class PanelAnalysisLoggerNode(Node):
         ax2.imshow(np.zeros((self.filas, self.cols)), cmap='gray', alpha=0.1, origin='upper')
 
         X, Y = np.meshgrid(np.arange(self.cols), np.arange(self.filas))
-        U = np.where(mask, datos['err_x'], 0)
+        U = np.where(mask, -datos['err_x'], 0)
         V = np.where(mask, datos['err_y'], 0)
         mag = np.sqrt(U**2 + V**2)
+        max_mag = np.max(mag)
         
-        ax2.scatter(X[mask], Y[mask], color='black', s=10)
+        ax2.scatter(X[mask], Y[mask], color='dimgray', s=20)
         if np.max(mag) > 0.01:
-            q = ax2.quiver(X[mask], Y[mask], U[mask], V[mask], mag[mask], cmap='Reds', pivot='mid')
+            # 1. DEFINIMOS EL UMBRAL (en mrad)
+            # Todo error por debajo de esto se dibujará pequeñito.
+            umbral_fijo_mrad = 5.0
+            
+            # 2. LÓGICA HÍBRIDA
+            # Si max_mag es 0.5, valor_referencia será 2.0 (Escala Fija)
+            # Si max_mag es 15.0, valor_referencia será 15.0 (Escala Dinámica)
+            valor_referencia = max(max_mag, umbral_fijo_mrad)
+            
+            # 3. APLICAMOS LA ESCALA
+            # Hacemos que ese valor de referencia ocupe como mucho el 90% de la casilla
+            escala_hibrida = valor_referencia / 0.9
+            
+            q = ax2.quiver(X[mask], Y[mask], U[mask], V[mask], mag[mask], 
+                           cmap='jet',            # Paleta de colores arcoíris
+                           pivot='mid',
+                           angles='xy',           # Respeta la matriz 2D
+                           scale_units='xy',      # Usa las unidades de la cuadrícula
+                           scale=escala_hibrida,  # Escala inteligente aplicada
+                           width=0.015,           # Grosor
+                           headwidth=5,
+                           headlength=6)
+            
+            # Forzamos los límites de la barra de color para que tampoco "baile"
+            # si los valores son muy pequeños
+            q.set_clim(vmin=0, vmax=valor_referencia)
+            
             fig.colorbar(q, ax=ax2, label='Magnitud Error (mrad)')
 
         fig.tight_layout()
