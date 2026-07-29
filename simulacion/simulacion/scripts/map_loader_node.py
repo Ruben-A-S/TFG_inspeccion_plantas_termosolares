@@ -16,32 +16,32 @@ from rclpy.duration import Duration
 
 from scipy.spatial.transform import Rotation as R
 
-# Scripts externos de inyección
+# External injection scripts
 try:
-    from Add_panels_from_file import inyectar_paneles
-    from Remove_panels_from_file import eliminar_paneles
+    from Add_collectors_from_file import inject_collectors
+    from Remove_collectors_from_file import remove_collectors
 except ImportError:
-    def inyectar_paneles(m, p, mod): pass
-    def eliminar_paneles(m, p): pass
+    def inject_collectors(m, p, mod): pass
+    def remove_collectors(m, p): pass
 
 # ==========================================
-# CONFIGURACIÓN GLOBAL
+# GLOBAL CONFIGURATION
 # ==========================================
-# Cambia esto a False para usar los paneles simples originales
-MODO_AVANZADO = True 
+# Change this to False to use the original simple collectors
+ADVANCED_MODE = True 
 
 # ==========================================
-# FUNCIONES MATEMÁTICAS
+# MATHEMATICAL FUNCTIONS
 # ==========================================
 
-def obtener_sol_inventado(fecha, hora):
+def get_invented_sun(date, time):
     return [1000.0, 100.0, 500.0]
 
-def calcular_orientacion_heliostato(p_c, p_aim, p_s):
+def calculate_heliostat_orientation(p_c, p_aim, p_s):
     """
-    La normal teórica de cada espejo será la bisectriz
-    entre la direccion que une éste con el sol y con 
-    el punto al que debe apuntar.
+    The theoretical normal of each mirror will be the bisector
+    between the direction connecting it to the sun and to 
+    the point it should aim at.
     """
     v_dl = -np.array(p_s) + np.array(p_c)
     d_dl = v_dl / np.linalg.norm(v_dl)
@@ -54,15 +54,15 @@ def calcular_orientacion_heliostato(p_c, p_aim, p_s):
     return float(yaw), float(pitch)
 
 # ==========================================
-# NODO MAP_LOADER_NODE
+# MAP_LOADER_NODE
 # ==========================================
 
 class MapLoaderNode(Node):
     """
-    Nodo para la gestión de los paneles
+    Node for managing the collectors
 
-    Incluye el cálculo de la dirección teórica para éstos y 
-    la gestión de las órdenes de giro dadas por la interfaz
+    It includes the calculation of the theoretical direction for them and 
+    the management of rotation orders given by the interface
     """
     def __init__(self):
         super().__init__('map_loader_node')
@@ -71,323 +71,320 @@ class MapLoaderNode(Node):
 
         self.tf_broadcaster = TransformBroadcaster(self)
 
-        self.paneles_teoria = []   
-        self.paneles_realidad = [] 
+        self.theoretical_collectors = []   
+        self.real_collectors = [] 
         
-        self.mundo_actual = "prueba1"
-        self.modelo_actual = "panel"
+        self.current_world = "test1"
+        self.current_model = "collector"
 
-        # --- SUSCRIPTORES ---
-        self.create_subscription(String, '/sim_cmd/map_management', self.gestion_mapa_callback, 10)
-        self.create_subscription(String, '/sim_cmd/rotate_panel', self.rotate_panel_callback, 10)
+        # --- SUBSCRIBERS ---
+        self.create_subscription(String, '/sim_cmd/map_management', self.map_management_callback, 10)
+        self.create_subscription(String, '/sim_cmd/rotate_collector', self.rotate_collector_callback, 10)
 
-        # --- PUBLICADORES ---
+        # --- PUBLISHERS ---
         self.pub_log = self.create_publisher(String, '/sim_status/log', 10)
-        self.pub_updates = self.create_publisher(String, '/sim_status/panel_updates', 10)
+        self.pub_updates = self.create_publisher(String, '/sim_status/collector_updates', 10)
 
-        # --- SERVICIOS ---
-        self.srv_teoria = self.create_service(Trigger, 'get_panel_theory', self.get_panel_theory_callback)
-        self.srv_realidad = self.create_service(Trigger, 'get_panel_real', self.get_panel_real_callback)
+        # --- SERVICES ---
+        self.srv_theory = self.create_service(Trigger, 'get_collector_theory', self.get_collector_theory_callback)
+        self.srv_real = self.create_service(Trigger, 'get_collector_real', self.get_collector_real_callback)
         
-        # Timer para publicar TF a 20Hz (para ver en RViz)
+        # Timer to publish TF at 20Hz (to see in RViz)
         self.create_timer(0.05, self.broadcast_tf_tree)
-        self.get_logger().info("Map Loader inicializado con soporte TF2.")
+        self.get_logger().info("Map Loader initialized with TF2 support.")
 
-        modo_str = "AVANZADO (Facetas)" if MODO_AVANZADO else "SIMPLE (Bloque)"
-        self.enviar_log(f"Map Loader LISTO en MODO {modo_str}. Esperando órdenes.")
+        mode_str = "ADVANCED (Facets)" if ADVANCED_MODE else "SIMPLE (Block)"
+        self.send_log(f"Map Loader READY in {mode_str} MODE. Waiting for commands.")
 
     def broadcast_tf_tree(self):
         """
-        Función para publicar los tf que permitan visualizar 
-        los sistemas de referencia en RVIZ.
+        Function to publish the tfs that allow visualizing 
+        the reference systems in RVIZ.
         """
         now = self.get_clock().now().to_msg()
-        for panel in self.paneles_realidad:
-            # 1. FRAME: Poste del panel (Yaw)
-            # map -> panel_id
-            t_panel = TransformStamped()
-            t_panel.header.stamp = now
-            t_panel.header.frame_id = 'world'
-            t_panel.child_frame_id = f"panel_{panel['id']}"
-            t_panel.transform.translation.x = float(panel['x'])
-            t_panel.transform.translation.y = float(panel['y'])
-            t_panel.transform.translation.z = float(panel['z'])
-            q_p = R.from_euler('z', panel['yaw']).as_quat()
-            t_panel.transform.rotation.x, t_panel.transform.rotation.y = q_p[0], q_p[1]
-            t_panel.transform.rotation.z, t_panel.transform.rotation.w = q_p[2], q_p[3]
-            self.tf_broadcaster.sendTransform(t_panel)
+        for collector in self.real_collectors:
+            # 1. FRAME: Collector pole (Yaw)
+            # map -> collector_id
+            t_collector = TransformStamped()
+            t_collector.header.stamp = now
+            t_collector.header.frame_id = 'world'
+            t_collector.child_frame_id = f"{collector['id']}"
+            t_collector.transform.translation.x = float(collector['x'])
+            t_collector.transform.translation.y = float(collector['y'])
+            t_collector.transform.translation.z = float(collector['z'])
+            q_p = R.from_euler('z', collector['yaw']).as_quat()
+            t_collector.transform.rotation.x, t_collector.transform.rotation.y = q_p[0], q_p[1]
+            t_collector.transform.rotation.z, t_collector.transform.rotation.w = q_p[2], q_p[3]
+            self.tf_broadcaster.sendTransform(t_collector)
 
-            # 2. FRAME: Plano inclinado del panel (Pitch)
-            # panel_id -> panel_inclinado_id
+            # 2. FRAME: Inclined plane of the collector (Pitch)
+            # collector_id -> collector_inclined_id
             t_pitch = TransformStamped()
             t_pitch.header.stamp = now
-            t_pitch.header.frame_id = f"panel_{panel['id']}"
-            t_pitch.child_frame_id = f"inclinacion_{panel['id']}"
-            # Rotamos sobre Y para aplicar el pitch del panel completo
-            q_pitch = R.from_euler('y', panel['pitch']).as_quat()
+            t_pitch.header.frame_id = f"{collector['id']}"
+            t_pitch.child_frame_id = f"inclination_{collector['id']}"
+            # We rotate on Y to apply the pitch of the entire collector
+            q_pitch = R.from_euler('y', collector['pitch']).as_quat()
             t_pitch.transform.rotation.x, t_pitch.transform.rotation.y = q_pitch[0], q_pitch[1]
             t_pitch.transform.rotation.z, t_pitch.transform.rotation.w = q_pitch[2], q_pitch[3]
             self.tf_broadcaster.sendTransform(t_pitch)
 
-            # 3. FRAME: Cada faceta (Offset + ajuste fino)
-            # inclinacion_id -> faceta_id
+            # 3. FRAME: Each facet (Offset + fine adjustment)
+            # inclination_id -> facet_id
             """
-            for faceta in panel.get('facetas', []):
-                t_faceta = TransformStamped()
-                t_faceta.header.stamp = now
-                t_faceta.header.frame_id = f"inclinacion_{panel['id']}"
-                t_faceta.child_frame_id = f"faceta_{faceta['id']}"
+            for facet in collector.get('facets', []):
+                t_facet = TransformStamped()
+                t_facet.header.stamp = now
+                t_facet.header.frame_id = f"inclination_{collector['id']}"
+                t_facet.child_frame_id = f"{facet['id']}"
                 
-                # Traslación (Offset)
-                t_faceta.transform.translation.x = float(faceta['offset'][0])
-                t_faceta.transform.translation.y = float(faceta['offset'][1])
-                t_faceta.transform.translation.z = float(faceta['offset'][2])
+                # Translation (Offset)
+                t_facet.transform.translation.x = float(facet['offset'][0])
+                t_facet.transform.translation.y = float(facet['offset'][1])
+                t_facet.transform.translation.z = float(facet['offset'][2])
                 
-                # Ajuste fino local (Canting) sobre X (Roll) e Y (Pitch)
-                q_f = R.from_euler('xy', [faceta.get('cant_roll', 0.0), faceta.get('cant_pitch', 0.0)]).as_quat()
-                t_faceta.transform.rotation.x, t_faceta.transform.rotation.y = q_f[0], q_f[1]
-                t_faceta.transform.rotation.z, t_faceta.transform.rotation.w = q_f[2], q_f[3]
-                self.tf_broadcaster.sendTransform(t_faceta)
+                # Local fine adjustment (Canting) on X (Roll) and Y (Pitch)
+                q_f = R.from_euler('xy', [facet.get('cant_roll', 0.0), facet.get('cant_pitch', 0.0)]).as_quat()
+                t_facet.transform.rotation.x, t_facet.transform.rotation.y = q_f[0], q_f[1]
+                t_facet.transform.rotation.z, t_facet.transform.rotation.w = q_f[2], q_f[3]
+                self.tf_broadcaster.sendTransform(t_facet)
             """
-    def get_panel_theory_callback(self, request, response):
+    def get_collector_theory_callback(self, request, response):
         response.success = True
-        response.message = json.dumps(self.paneles_teoria)
+        response.message = json.dumps(self.theoretical_collectors)
         return response
 
-    def get_panel_real_callback(self, request, response):
+    def get_collector_real_callback(self, request, response):
         response.success = True
-        response.message = json.dumps(self.paneles_realidad)
+        response.message = json.dumps(self.real_collectors)
         return response
 
-    def obtener_entidades_gazebo(self, lista_paneles):
+    def get_gazebo_entities(self, collector_list):
         """
-        Traduce nuestra memoria jerárquica a objetos planos para Gazebo.
-        - Panel Global: Yaw (poste vertical Z) + Pitch (bisagra horizontal Y)
-        - Faceta: Roll (Eje X) + Pitch (Eje Y) local
+        Translates our hierarchical memory into flat objects for Gazebo.
+        - Global Collector: Yaw (Z vertical pole) + Pitch (Y horizontal hinge)
+        - Facet: Local Roll (X axis) + Pitch (Y axis)
         """
-        entidades_planas = []
+        flat_entities = []
         
-        for panel in lista_paneles:
-            if not MODO_AVANZADO:
-                entidades_planas.append(panel)
+        for collector in collector_list:
+            if not ADVANCED_MODE:
+                flat_entities.append(collector)
                 continue
 
-            # 1. Base del panel en el mundo (Vector de traslación)
-            pos_panel = np.array([panel['x'], panel['y'], panel['z']])
+            # 1. Base of the collector in the world (Translation vector)
+            collector_pos = np.array([collector['x'], collector['y'], collector['z']])
             
-            # 2. CINEMÁTICA DEL PANEL GLOBAL
-            # Construimos los "motores" de la estructura:
-            rot_yaw = R.from_euler('z', panel['yaw'])     # Motor del poste vertical
-            rot_pitch = R.from_euler('y', panel['pitch']) # Motor de la bisagra horizontal
+            # 2. GLOBAL COLLECTOR KINEMATICS
+            # We build the "motors" of the structure:
+            rot_yaw = R.from_euler('z', collector['yaw'])      # Vertical pole motor
+            rot_pitch = R.from_euler('y', collector['pitch'])  # Horizontal hinge motor
             
-            # Al multiplicar (Yaw * Pitch), Scipy aplica primero el Pitch sobre el Y local, 
-            # y luego hace girar todo el conjunto sobre el Z vertical. 
-            rot_global_marco = rot_yaw * rot_pitch
+            # By multiplying (Yaw * Pitch), Scipy first applies the Pitch on the local Y, 
+            # and then rotates the whole assembly on the vertical Z. 
+            global_frame_rot = rot_yaw * rot_pitch
 
-            for faceta in panel.get('facetas', []):
-                # Desplazamiento de la faceta sobre la parrilla del panel
-                offset_local = np.array(faceta['offset'])
+            for facet in collector.get('facets', []):
+                # Displacement of the facet on the collector's grid
+                local_offset = np.array(facet['offset'])
 
-                # A) CÁLCULO DE POSICIÓN ABSOLUTA
-                # Colocamos el offset en el marco rotado y lo sumamos a la base
-                pos_absoluta = pos_panel + rot_global_marco.apply(offset_local)
+                # A) ABSOLUTE POSITION CALCULATION
+                # We place the offset in the rotated frame and add it to the base
+                absolute_pos = collector_pos + global_frame_rot.apply(local_offset)
 
-                # B) ROTACIÓN LOCAL DE LA FACETA (Canting)
-                # Tal como indicaste, mantenemos esto igual porque los giros de facetas van bien
-                cant_roll = faceta.get('cant_roll', 0.0)
-                cant_pitch = faceta.get('cant_pitch', 0.0)
-                rot_canting = R.from_euler('xy', [cant_roll, cant_pitch])
+                # B) LOCAL FACET ROTATION (Canting)
+                # As you indicated, we keep this the same because facet rotations work fine
+                cant_roll = facet.get('cant_roll', 0.0)
+                cant_pitch = facet.get('cant_pitch', 0.0)
+                canting_rot = R.from_euler('xy', [cant_roll, cant_pitch])
                 
-                # C) ROTACIÓN TOTAL Y EXTRACCIÓN
-                # Sumamos la rotación de la estructura base + la rotación del propio espejo
-                rot_absoluta = rot_global_marco * rot_canting
+                # C) TOTAL ROTATION AND EXTRACTION
+                # We add the rotation of the base structure + the rotation of the mirror itself
+                absolute_rot = global_frame_rot * canting_rot
 
-                # Extracción clásica idéntica a la que usaba el TF para pasárselo a Gazebo
-                euler_final = rot_absoluta.as_euler('xyz')
+                # Classic extraction identical to the one TF used to pass to Gazebo
+                final_euler = absolute_rot.as_euler('xyz')
 
-                entidades_planas.append({
-                    "id": faceta['id'],
-                    "x": float(pos_absoluta[0]),
-                    "y": float(pos_absoluta[1]),
-                    "z": float(pos_absoluta[2]),
-                    "roll": float(euler_final[0]),
-                    "pitch": float(euler_final[1]), 
-                    "yaw": float(euler_final[2])    
+                flat_entities.append({
+                    "id": facet['id'],
+                    "x": float(absolute_pos[0]),
+                    "y": float(absolute_pos[1]),
+                    "z": float(absolute_pos[2]),
+                    "roll": float(final_euler[0]),
+                    "pitch": float(final_euler[1]), 
+                    "yaw": float(final_euler[2])    
                 })
 
-        return entidades_planas
+        return flat_entities
         
-    def rotate_panel_callback(self, msg):
+    def rotate_collector_callback(self, msg):
         try:
-            datos = json.loads(msg.data)
-            target_id = datos.get("id_panel")
-            id_faceta = datos.get("id_faceta", "todas") 
+            data = json.loads(msg.data)
+            target_id = data.get("collector_id")
+            facet_id = data.get("facet_id", "all") 
             
-            panel_real = next((p for p in self.paneles_realidad if p['id'] == target_id), None)
+            real_collector = next((c for c in self.real_collectors if c['id'] == target_id), None)
             
-            if not panel_real:
-                self.enviar_log(f"ERROR: El panel '{target_id}' no existe.")
+            if not real_collector:
+                self.send_log(f"ERROR: The collector '{target_id}' does not exist.")
                 return
 
             # =========================================================
-            # MODO FACETA ÚNICA
+            # SINGLE FACET MODE
             # =========================================================
-            if MODO_AVANZADO and id_faceta != "todas":
-                # 1. Buscamos la faceta concreta en la memoria antes de cambiarla
-                faceta_antigua = next((f for f in panel_real.get('facetas', []) if f['id'] == id_faceta), None)
-                if not faceta_antigua:
-                    self.enviar_log(f"ERROR: Faceta '{id_faceta}' no encontrada.")
+            if ADVANCED_MODE and facet_id != "all":
+                # 1. We look for the specific facet in memory before changing it
+                old_facet = next((f for f in real_collector.get('facets', []) if f['id'] == facet_id), None)
+                if not old_facet:
+                    self.send_log(f"ERROR: Facet '{facet_id}' not found.")
                     return
                 
-                # 2. Calculamos su estado en Gazebo JUSTO ANTES del cambio para poder borrar SOLO esa faceta
-                # Para ello, usamos una lista temporal con un "falso panel" que solo tiene esa faceta
-                panel_temporal = panel_real.copy()
-                panel_temporal['facetas'] = [faceta_antigua]
-                entidad_vieja_unica = self.obtener_entidades_gazebo([panel_temporal])
+                # 2. We calculate its state in Gazebo JUST BEFORE the change to delete ONLY that facet
+                # To do this, we use a temporary list with a "fake collector" that only has that facet
+                temp_collector = real_collector.copy()
+                temp_collector['facets'] = [old_facet]
+                single_old_entity = self.get_gazebo_entities([temp_collector])
                 
-                # Borramos SOLO esa faceta en Gazebo
-                eliminar_paneles(self.mundo_actual, entidad_vieja_unica)
+                # We delete ONLY that facet in Gazebo
+                remove_collectors(self.current_world, single_old_entity)
 
-                # 3. Aplicamos el giro en memoria a la faceta
-                faceta_antigua['cant_roll'] += math.radians(datos.get("roll_inc", 0.0))
-                faceta_antigua['cant_pitch'] += math.radians(datos.get("pitch_inc", 0.0))
+                # 3. We apply the rotation in memory to the facet
+                old_facet['cant_roll'] += math.radians(data.get("roll_inc", 0.0))
+                old_facet['cant_pitch'] += math.radians(data.get("pitch_inc", 0.0))
 
-                # 4. Calculamos la nueva posición de SOLO esa faceta y la inyectamos
-                entidad_nueva_unica = self.obtener_entidades_gazebo([panel_temporal])
-                inyectar_paneles(self.mundo_actual, entidad_nueva_unica, "faceta")
+                # 4. We calculate the new position of ONLY that facet and inject it
+                single_new_entity = self.get_gazebo_entities([temp_collector])
+                inject_collectors(self.current_world, single_new_entity, "facet")
 
-                self.enviar_log(f"QUIRÚRGICO [OK]: Reemplazada únicamente la faceta {id_faceta}.")
+                self.send_log(f"SURGICAL [OK]: Only facet {facet_id} was replaced.")
 
             # =========================================================
-            # MODO GLOBAL: MOVER EL PANEL ENTERO (TODAS LAS FACETAS)
+            # GLOBAL MODE: MOVE THE ENTIRE COLLECTOR (ALL FACETS)
             # =========================================================
             else:
-                # Borramos todo el bloque/facetas del panel actual
-                entidades_viejas = self.obtener_entidades_gazebo([panel_real])
-                eliminar_paneles(self.mundo_actual, entidades_viejas)
+                # We delete the whole block/facets of the current collector
+                old_entities = self.get_gazebo_entities([real_collector])
+                remove_collectors(self.current_world, old_entities)
 
-                # Modificamos el tracking principal
-                panel_real['yaw'] += math.radians(datos.get("yaw_inc", 0.0))
-                panel_real['pitch'] += math.radians(datos.get("pitch_inc", 0.0))
+                # We modify the main tracking
+                real_collector['yaw'] += math.radians(data.get("yaw_inc", 0.0))
+                real_collector['pitch'] += math.radians(data.get("pitch_inc", 0.0))
 
-                # Reinyectamos el panel completo actualizado
-                entidades_nuevas = self.obtener_entidades_gazebo([panel_real])
-                modelo_inyectar = "faceta" if MODO_AVANZADO else self.modelo_actual
-                inyectar_paneles(self.mundo_actual, entidades_nuevas, modelo_inyectar)
+                # We reinject the fully updated collector
+                new_entities = self.get_gazebo_entities([real_collector])
+                model_to_inject = "facet" if ADVANCED_MODE else self.current_model
+                inject_collectors(self.current_world, new_entities, model_to_inject)
                 
-                self.enviar_log(f"ROTACIÓN GLOBAL [OK]: {target_id} reorganizado por completo.")
+                self.send_log(f"GLOBAL ROTATION [OK]: {target_id} completely reorganized.")
             
-            # 5. Notificar al sistema
+            # 5. Notify the system
             self.pub_updates.publish(String(data=json.dumps([target_id])))
             
         except Exception as e:
-            self.enviar_log(f"Fallo en rotación: {e}")
+            self.send_log(f"Rotation failure: {e}")
             
-    def gestion_mapa_callback(self, msg):
+    def map_management_callback(self, msg):
         try:
-            datos = json.loads(msg.data)
-            if datos.get("accion") == "CARGAR":
-                self.mundo_actual = datos.get("mundo", self.mundo_actual)
-                self.modelo_actual = datos.get("modelo", self.modelo_actual)
+            data = json.loads(msg.data)
+            if data.get("action") == "LOAD":
+                self.current_world = data.get("world", self.current_world)
+                self.current_model = data.get("model", self.current_model)
                 
-                self.paneles_teoria = self.generar_array_desde_csv(
-                    datos.get("csv"), 
-                    datos.get("fecha", "10/02/2001"), 
-                    datos.get("hora", "12:00")
+                self.theoretical_collectors = self.generate_array_from_csv(
+                    data.get("csv"), 
+                    data.get("date", "10/02/2001"), 
+                    data.get("time", "12:00")
                 )
-                self.paneles_realidad = json.loads(json.dumps(self.paneles_teoria))
+                self.real_collectors = json.loads(json.dumps(self.theoretical_collectors))
                 
-                # Traducimos a objetos planos y mandamos a Gazebo
-                entidades = self.obtener_entidades_gazebo(self.paneles_realidad)
-                modelo_inyectar = "faceta" if MODO_AVANZADO else self.modelo_actual
-                inyectar_paneles(self.mundo_actual, entidades, modelo_inyectar)
+                # We translate to flat objects and send to Gazebo
+                entities = self.get_gazebo_entities(self.real_collectors)
+                model_to_inject = "facet" if ADVANCED_MODE else self.current_model
+                inject_collectors(self.current_world, entities, model_to_inject)
                 
-                ids_notificacion = [p['id'] for p in self.paneles_realidad]
-                self.pub_updates.publish(String(data=json.dumps(ids_notificacion)))
-                self.enviar_log(f"MAPA CARGADO: {len(self.paneles_teoria)} paneles (Avanzado: {MODO_AVANZADO}).")
+                notification_ids = [c['id'] for c in self.real_collectors]
+                self.pub_updates.publish(String(data=json.dumps(notification_ids)))
+                self.send_log(f"MAP LOADED: {len(self.theoretical_collectors)} collectors (Advanced: {ADVANCED_MODE}).")
 
-            elif datos.get("accion") == "VACIAR":
-                entidades = self.obtener_entidades_gazebo(self.paneles_realidad)
-                eliminar_paneles(self.mundo_actual, entidades)
-                self.paneles_teoria = []
-                self.paneles_realidad = []
+            elif data.get("action") == "EMPTY":
+                entities = self.get_gazebo_entities(self.real_collectors)
+                remove_collectors(self.current_world, entities)
+                self.theoretical_collectors = []
+                self.real_collectors = []
                 self.pub_updates.publish(String(data="[]"))
-                self.enviar_log("MAPA VACIADO.")
+                self.send_log("MAP EMPTIED.")
 
         except Exception as e:
-            self.enviar_log(f"Error gestion: {e}")
+            self.send_log(f"Management error: {e}")
 
-    def generar_array_desde_csv(self, nombre_csv, fecha, hora):
+    def generate_array_from_csv(self, csv_name, date, time_str):
         """
-        Inspeccionamos el csv para hallar los datos teóricos de los paneles
+        We inspect the csv to find the theoretical data of the collectors
         """
-        ruta = os.path.expanduser(f"~/{nombre_csv}")
-        lista = []
+        path = os.path.expanduser(f"~/{csv_name}")
+        collector_list = []
         try:
-            with open(ruta, mode='r', encoding='utf-8') as f:
+            with open(path, mode='r', encoding='utf-8') as f:
                 next(f) 
-                lector = csv.DictReader(f)
-                for fila in lector:
-                    if len(lista) >= 5: break 
+                reader = csv.DictReader(f)
+                for row in reader:
+                    if len(collector_list) >= 5: break 
                     
-                    x, y, z = float(fila["Heliostat x"]), float(fila["Heliostat y"]), float(fila["Heliostat z"])
-                    ax, ay, az = float(fila["Aiming point x"]), float(fila["Aiming point y"]), float(fila["Aiming point z"])
+                    x, y, z = float(row["Heliostat x"]), float(row["Heliostat y"]), float(row["Heliostat z"])
+                    ax, ay, az = float(row["Aiming point x"]), float(row["Aiming point y"]), float(row["Aiming point z"])
                     
-                    yaw, pitch = calcular_orientacion_heliostato([x,y,z], [ax,ay,az], obtener_sol_inventado(fecha, hora))
+                    yaw, pitch = calculate_heliostat_orientation([x,y,z], [ax,ay,az], get_invented_sun(date, time_str))
                     
-                    panel_id = f"panel_{len(lista)}"
-                    width_x = float(fila["Heliostat width (x)"])
-                    length_y = float(fila["Heliostat length (y)"])
+                    collector_id = f"collector_{len(collector_list)}"
+                    width_x = float(row["Heliostat width (x)"])
+                    length_y = float(row["Heliostat length (y)"])
                     
-                    # Diccionario base del panel
-                    panel_data = {
-                        "id": panel_id, 
+                    # Base dictionary of the collector
+                    collector_data = {
+                        "id": collector_id, 
                         "x": x, "y": y, "z": z + 5,
                         "yaw": yaw, "pitch": pitch,
                         "width_x": width_x,
                         "length_y": length_y
                     }
 
-                    # --- MODO 2: GENERACIÓN DE 5x5 FACETAS ---
-                    if MODO_AVANZADO:
-                        facetas = []
-                        w_faceta = width_x / 5.0
-                        l_faceta = length_y / 5.0
+                    # --- MODE 2: GENERATION OF 5x5 FACETS ---
+                    if ADVANCED_MODE:
+                        facets = []
+                        w_facet = width_x / 5.0
+                        l_facet = length_y / 5.0
                         
-                        # Bucle de -2 a +2 para generar una cuadrícula centrada en el poste
+                        # Loop from -2 to +2 to generate a grid centered on the pole
                         for i in range(-2, 3):
                             for j in range(-2, 3):
-                                id_faceta = f"{panel_id}_f{i+2}_{j+2}"
-                                facetas.append({
-                                    "id": id_faceta,
-                                    "offset": [i * w_faceta, j * l_faceta, 0.0],
+                                facet_id = f"{collector_id}_f{i+2}_{j+2}"
+                                facets.append({
+                                    "id": facet_id,
+                                    "offset": [i * w_facet, j * l_facet, 0.0],
                                     "cant_roll": 0.0,
                                     "cant_pitch": 0.0
                                 })
-                        panel_data["facetas"] = facetas
+                        collector_data["facets"] = facets
                     
-                    lista.append(panel_data)
+                    collector_list.append(collector_data)
                     
-            return lista
+            return collector_list
         except Exception as e:
-            self.enviar_log(f"Error CSV: {e}")
+            self.send_log(f"CSV Error: {e}")
             return []
 
-    def enviar_log(self, texto):
-        msg = String(data=f"[MAP_LOADER] {texto}")
+    def send_log(self, text):
+        msg = String(data=f"[MAP_LOADER] {text}")
         self.pub_log.publish(msg)
-        self.get_logger().info(texto)
+        self.get_logger().info(text)
 
 def main(args=None):
     rclpy.init(args=args)
-    nodo = MapLoaderNode()
-    try: rclpy.spin(nodo)
+    node = MapLoaderNode()
+    try: rclpy.spin(node)
     except KeyboardInterrupt: pass
     finally:
-        nodo.destroy_node()
+        node.destroy_node()
         if rclpy.ok(): rclpy.shutdown()
 
 if __name__ == '__main__': main()
-
-
-

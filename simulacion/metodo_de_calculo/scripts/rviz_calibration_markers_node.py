@@ -12,172 +12,172 @@ from scipy.spatial.transform import Rotation as R
 
 class RVizCalibrationMarkersNode(Node):
     """
-    Nodo encargado de suscribirse a los resultados de HelioPoint
-    y publicar MarkerArrays en RViz para visualizar los vectores normales,
-    incluyendo la reconstrucción de la Normal Media Acumulada.
-    Adaptado para soportar Heliostatos Multifacetados.
+    Node in charge of subscribing to HelioPoint results
+    and publishing MarkerArrays in RViz to visualize normal vectors,
+    including the reconstruction of the Cumulative Mean Normal.
+    Adapted to support Multi-facet Heliostats.
     """
     def __init__(self):
         super().__init__('rviz_calibration_markers_node')
         
-        self.paneles_teoria = {}
+        self.theoretical_collectors = {}
         
-        self.cli_teoria = self.create_client(Trigger, 'get_panel_theory')
-        self.create_subscription(String, '/sim_status/panel_updates', self.actualizar_teoria_callback, 10)
-        self.create_subscription(String, '/calibration/results', self.resultados_callback, 10)
+        self.cli_theory = self.create_client(Trigger, 'get_collector_theory')
+        self.create_subscription(String, '/sim_status/collector_updates', self.update_theory_callback, 10)
+        self.create_subscription(String, '/calibration/results', self.results_callback, 10)
         
         self.pub_markers = self.create_publisher(MarkerArray, '/calibration/rviz_markers', 10)
         
         self.frame_id = "world"  
-        # NOTA: He reducido la longitud de la flecha de 5.0 a 3.0 para que 
-        # en paneles de 25 facetas no se forme un borrón de colores gigante.
-        self.longitud_flecha = 3.0  
+        # NOTE: I reduced the arrow length from 5.0 to 3.0 so that 
+        # on 25-facet collectors it doesn't form a giant blur of colors.
+        self.arrow_length = 3.0  
 
-        self.pedir_mapa_teorico()
-        self.get_logger().info("Visualizador de Flechas RViz iniciado [MODO FACETAS UNIFICADO]. Esperando vectores...")
+        self.request_theoretical_map()
+        self.get_logger().info("RViz Arrow Visualizer started [UNIFIED FACETS MODE]. Waiting for vectors...")
 
-    def pedir_mapa_teorico(self):
-        if not self.cli_teoria.service_is_ready():
+    def request_theoretical_map(self):
+        if not self.cli_theory.service_is_ready():
             return
         req = Trigger.Request()
-        self.cli_teoria.call_async(req).add_done_callback(self.al_recibir_teoria)
+        self.cli_theory.call_async(req).add_done_callback(self.on_theory_received)
 
     # ==========================================
-    # LA MAGIA: CINEMÁTICA UNIFICADA EN MEMORIA
+    # THE MAGIC: UNIFIED KINEMATICS IN MEMORY
     # ==========================================
-    def al_recibir_teoria(self, futuro):
+    def on_theory_received(self, future):
         try:
-            res = futuro.result()
+            res = future.result()
             if res.success:
-                lista = json.loads(res.message)
-                self.paneles_teoria = {}
+                c_list = json.loads(res.message)
+                self.theoretical_collectors = {}
                 
-                for p in lista:
-                    # Cinemática base (Yaw en Z, Pitch en Y)
-                    rot_yaw = R.from_euler('z', p.get('yaw', 0.0))
-                    rot_pitch = R.from_euler('y', p.get('pitch', 0.0))
-                    r_p_global = rot_yaw * rot_pitch
+                for c in c_list:
+                    # Base kinematics (Yaw on Z, Pitch on Y)
+                    rot_yaw = R.from_euler('z', c.get('yaw', 0.0))
+                    rot_pitch = R.from_euler('y', c.get('pitch', 0.0))
+                    global_c_r = rot_yaw * rot_pitch
                     
-                    pos_p_global = np.array([p.get('x', 0.0), p.get('y', 0.0), p.get('z', 0.0)])
+                    global_c_pos = np.array([c.get('x', 0.0), c.get('y', 0.0), c.get('z', 0.0)])
                     
-                    if 'facetas' in p:
-                        for f in p['facetas']:
-                            offset_local = np.array(f.get('offset', [0.0, 0.0, 0.0]))
-                            pos_f = pos_p_global + r_p_global.apply(offset_local)
+                    if 'facets' in c:
+                        for f in c['facets']:
+                            local_offset = np.array(f.get('offset', [0.0, 0.0, 0.0]))
+                            pos_f = global_c_pos + global_c_r.apply(local_offset)
                             
-                            # Cinemática local de la faceta (Roll y Pitch)
-                            rot_canting = R.from_euler('xy', [f.get('cant_roll', 0.0), f.get('cant_pitch', 0.0)])
-                            r_f_final = r_p_global * rot_canting
+                            # Local facet kinematics (Roll and Pitch)
+                            canting_rot = R.from_euler('xy', [f.get('cant_roll', 0.0), f.get('cant_pitch', 0.0)])
+                            final_f_r = global_c_r * canting_rot
                             
-                            # Guardamos la posición y la rotación PURA
-                            self.paneles_teoria[str(f['id'])] = {
+                            # We store the PURE position and rotation
+                            self.theoretical_collectors[str(f['id'])] = {
                                 'pos': pos_f,
-                                'rot': r_f_final
+                                'rot': final_f_r
                             }
                     else:
-                        self.paneles_teoria[str(p['id'])] = {
-                            'pos': pos_p_global,
-                            'rot': r_p_global
+                        self.theoretical_collectors[str(c['id'])] = {
+                            'pos': global_c_pos,
+                            'rot': global_c_r
                         }
                         
-                self.get_logger().info(f"Puntos de anclaje de flechas listos: {len(self.paneles_teoria)} orígenes.")
+                self.get_logger().info(f"Arrow anchor points ready: {len(self.theoretical_collectors)} origins.")
         except Exception as e:
-            self.get_logger().error(f"Error cargando teoría: {e}")
+            self.get_logger().error(f"Error loading theory: {e}")
 
-    def actualizar_teoria_callback(self, msg):
-        self.pedir_mapa_teorico()
+    def update_theory_callback(self, msg):
+        self.request_theoretical_map()
 
-    def resultados_callback(self, msg):
-        if not self.paneles_teoria:
+    def results_callback(self, msg):
+        if not self.theoretical_collectors:
             return 
             
         try:
-            resultados = json.loads(msg.data)
+            results = json.loads(msg.data)
             marker_array = MarkerArray()
             
-            for p in resultados:
-                p_id = str(p.get("id"))
+            for p in results:
+                c_id = str(p.get("id"))
                 
-                if p_id not in self.paneles_teoria:
+                if c_id not in self.theoretical_collectors:
                     continue
                     
-                # Extraemos de memoria
-                panel_teo = self.paneles_teoria[p_id]
-                base_x, base_y, base_z = panel_teo['pos']
-                r_teo_original = panel_teo['rot']
+                # We extract from memory
+                theo_c = self.theoretical_collectors[c_id]
+                base_x, base_y, base_z = theo_c['pos']
+                original_theo_r = theo_c['rot']
                 
-                # 1. Extraer los vectores básicos ya calculados
-                n_teo = p.get("normal_teorica", [0.0, 0.0, 1.0])
-                n_med = p.get("normal_medida", [0.0, 0.0, 1.0])
+                # 1. Extract the already calculated basic vectors
+                n_theo = p.get("theoretical_normal", [0.0, 0.0, 1.0])
+                n_meas = p.get("measured_normal", [0.0, 0.0, 1.0])
                 
-                # 2. Extraer los errores medios y pasarlos a radianes
+                # 2. Extract the mean errors and convert them to radians
                 error_x_rad = p.get("error_x_mrad", 0.0) / 1000.0
                 error_y_rad = p.get("error_y_mrad", 0.0) / 1000.0
                 
-                # 3. RECONSTRUIR LA NORMAL MEDIA PERFECTA
-                # Ya no tenemos que inventarnos el pitch y el yaw, usamos la matriz real
+                # 3. RECONSTRUCT THE PERFECT MEAN NORMAL
+                # We no longer have to invent the pitch and yaw, we use the real matrix
                 r_error = R.from_euler('xy', [error_x_rad, error_y_rad])
-                n_media_ccs = r_error.apply([0.0, 0.0, 1.0])
-                n_media_global = r_teo_original.apply(n_media_ccs)
+                ccs_mean_n = r_error.apply([0.0, 0.0, 1.0])
+                global_mean_n = original_theo_r.apply(ccs_mean_n)
                 
-                hash_id = abs(hash(str(p_id))) % 100000
+                hash_id = abs(hash(str(c_id))) % 100000
                 
-                # Flecha Teórica (AZUL)
-                marker_teo = self.crear_flecha(
-                    id_marcador=hash_id,
+                # Theoretical Arrow (BLUE)
+                marker_theo = self.create_arrow(
+                    marker_id=hash_id,
                     x=base_x, y=base_y, z=base_z,
-                    vector=n_teo,
-                    ns="1_normal_teorica",
+                    vector=n_theo,
+                    ns="1_theoretical_normal",
                     color=(0.0, 0.5, 1.0)
                 )
                 
-                # Flecha Medida Instantánea (ROJA)
-                marker_med = self.crear_flecha(
-                    id_marcador=hash_id + 100000,
+                # Instantaneous Measured Arrow (RED)
+                marker_meas = self.create_arrow(
+                    marker_id=hash_id + 100000,
                     x=base_x, y=base_y, z=base_z,
-                    vector=n_med,
-                    ns="2_normal_medida_instantanea",
+                    vector=n_meas,
+                    ns="2_instantaneous_measured_normal",
                     color=(1.0, 0.0, 0.2)
                 )
                 
-                # Flecha Media Acumulada (VERDE)
-                marker_media = self.crear_flecha(
-                    id_marcador=hash_id + 200000,
+                # Cumulative Mean Arrow (GREEN)
+                marker_mean = self.create_arrow(
+                    marker_id=hash_id + 200000,
                     x=base_x, y=base_y, z=base_z,
-                    vector=n_media_global.tolist(),
-                    ns="3_normal_media_acumulada",
+                    vector=global_mean_n.tolist(),
+                    ns="3_cumulative_mean_normal",
                     color=(0.1, 0.9, 0.1) 
                 )
                 
-                marker_array.markers.append(marker_teo)
-                marker_array.markers.append(marker_med)
-                marker_array.markers.append(marker_media)
+                marker_array.markers.append(marker_theo)
+                marker_array.markers.append(marker_meas)
+                marker_array.markers.append(marker_mean)
                 
             if marker_array.markers:
                 self.pub_markers.publish(marker_array)
                 
         except Exception as e:
-            self.get_logger().error(f"Error al procesar resultados para RViz: {e}")
+            self.get_logger().error(f"Error processing results for RViz: {e}")
 
-    def crear_flecha(self, id_marcador, x, y, z, vector, ns, color):
+    def create_arrow(self, marker_id, x, y, z, vector, ns, color):
         marker = Marker()
         marker.header.frame_id = self.frame_id
         marker.header.stamp = self.get_clock().now().to_msg()
         
         marker.ns = ns
-        marker.id = id_marcador
+        marker.id = marker_id
         marker.type = Marker.ARROW
         marker.action = Marker.ADD
         
-        p_inicio = Point(x=float(x), y=float(y), z=float(z))
-        p_fin = Point(
-            x=float(x + (vector[0] * self.longitud_flecha)),
-            y=float(y + (vector[1] * self.longitud_flecha)),
-            z=float(z + (vector[2] * self.longitud_flecha))
+        p_start = Point(x=float(x), y=float(y), z=float(z))
+        p_end = Point(
+            x=float(x + (vector[0] * self.arrow_length)),
+            y=float(y + (vector[1] * self.arrow_length)),
+            z=float(z + (vector[2] * self.arrow_length))
         )
-        marker.points = [p_inicio, p_fin]
+        marker.points = [p_start, p_end]
         
-        # Escala: grosor de la flecha
+        # Scale: arrow thickness
         marker.scale.x = 0.10  
         marker.scale.y = 0.20  
         marker.scale.z = 0.20  
@@ -194,14 +194,14 @@ class RVizCalibrationMarkersNode(Node):
 
 def main(args=None):
     rclpy.init(args=args)
-    nodo = RVizCalibrationMarkersNode()
+    node = RVizCalibrationMarkersNode()
     try:
-        rclpy.spin(nodo)
+        rclpy.spin(node)
     except KeyboardInterrupt:
         pass
     finally:
         if rclpy.ok():
-            nodo.destroy_node()
+            node.destroy_node()
             rclpy.shutdown()
 
 if __name__ == '__main__':

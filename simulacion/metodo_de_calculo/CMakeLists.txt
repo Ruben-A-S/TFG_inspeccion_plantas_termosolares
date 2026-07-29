@@ -7,8 +7,6 @@ find_package(ament_cmake REQUIRED)
 
 # 3. Reglas de Instalación (Lo más importante para este paquete)
 install(DIRECTORY
-  launch
-  models
   DESTINATION share/${PROJECT_NAME}
 )
 

@@ -7,8 +7,8 @@ from rclpy.node import Node
 from std_msgs.msg import String
 from rclpy.qos import QoSProfile, ReliabilityPolicy, DurabilityPolicy
 
-# Definimos el perfil de comunicación EXACTO para evitar el conflicto de QoS
-mi_qos_profile = QoSProfile(
+# We define the EXACT communication profile to avoid QoS conflicts
+my_qos_profile = QoSProfile(
     reliability=ReliabilityPolicy.BEST_EFFORT,
     durability=DurabilityPolicy.VOLATILE,
     depth=10
@@ -26,110 +26,112 @@ class Color:
 
 class FeedbackMonitorNode(Node):
     """
-    Nodo subscriptor de diferentes tópicos que ofrece 
-    feedback del estado de la simulación.
+    Subscriber node for different topics that offers 
+    feedback on the state of the simulation.
 
-    Además de mostrar feedback de las órdenes enviadas con la interfaz, 
-    permite visualizar resultados del método de inspección, 
-    mostrando el error de orientación medido.
+    In addition to showing feedback from commands sent via the interface, 
+    it allows visualization of the inspection method's results, 
+    displaying the measured orientation error.
     """
+    
     def __init__(self):
         super().__init__('feedback_monitor_node')
         
-        self.ultima_impresion = {} 
-        self.intervalo_refresco = 1.0 
+        self.last_print = {} 
+        self.refresh_interval = 1.0 
 
-        # --- SUSCRIPCIONES ---
+        # --- SUBSCRIPTIONS ---
         self.create_subscription(String, '/sim_status/log', self.log_callback, 10)
-        self.create_subscription(String, '/sim_status/state', self.estado_callback, 10)
-        self.create_subscription(String, '/sim_status/panel_updates', self.updates_callback, 10)
-        self.create_subscription(String, '/calibration/results', self.resultados_callback, 10)
+        self.create_subscription(String, '/sim_status/state', self.state_callback, 10)
+        self.create_subscription(String, '/sim_status/collector_updates', self.updates_callback, 10)
+        self.create_subscription(String, '/calibration/results', self.results_callback, 10)
         
-        # Suscripción al Faker con el perfil de QoS forzado para evitar el WARNING
-        self.create_subscription(String, '/inspection/raw_data', self.raw_data_callback, mi_qos_profile)
+        # Subscription to the Faker with the forced QoS profile to avoid the WARNING
+        self.create_subscription(String, '/inspection/raw_data', self.raw_data_callback, my_qos_profile)
         
-        self.estado_actual = ""
+        self.current_state = ""
 
         print(f"\n{Color.OKCYAN}{Color.BOLD}" + "=" * 45)
-        print("         MONITOR CENTRAL DE INSPECCIÓN TERMOSOLAR ACTIVO")
+        print("          ACTIVE SOLAR THERMAL INSPECTION CENTRAL MONITOR")
         print("=" * 45 + f"{Color.ENDC}\n")
 
-    def estado_callback(self, msg):
-        nuevo_estado = msg.data
-        if nuevo_estado != self.estado_actual:
-            self.estado_actual = nuevo_estado
-            print(f"{Color.BOLD}{Color.OKBLUE}[SISTEMA]{Color.ENDC} Estado: {Color.BOLD}{nuevo_estado}{Color.ENDC}")
+    def state_callback(self, msg):
+        new_state = msg.data
+        if new_state != self.current_state:
+            self.current_state = new_state
+            print(f"{Color.BOLD}{Color.OKBLUE}[SYSTEM]{Color.ENDC} State: {Color.BOLD}{new_state}{Color.ENDC}")
 
     def updates_callback(self, msg):
         try:
             ids = json.loads(msg.data)
             if ids:
-                print(f"{Color.OKCYAN}[UPDATE]{Color.ENDC} Entidades modificadas: {ids}")
+                print(f"{Color.OKCYAN}[UPDATE]{Color.ENDC} Modified entities: {ids}")
             else:
-                print(f"{Color.WARNING}[UPDATE]{Color.ENDC} Mapa vaciado.")
+                print(f"{Color.WARNING}[UPDATE]{Color.ENDC} Map emptied.")
         except:
             pass
 
     def raw_data_callback(self, msg):
         try:
-            impactos = json.loads(msg.data)
-            ahora = time.time()
+            impacts = json.loads(msg.data)
+            now = time.time()
             
-            for imp in impactos:
-                p_id = imp.get("id_panel", "Desconocido")
-                llave_spam = f"{p_id}_raw"
+            for imp in impacts:
+                # Changed "id_panel" to "collector_id" to match the first script
+                c_id = imp.get("collector_id", "Unknown")
+                spam_key = f"{c_id}_raw"
                 
-                if ahora - self.ultima_impresion.get(llave_spam, 0.0) > self.intervalo_refresco:
-                    self.ultima_impresion[llave_spam] = ahora
+                if now - self.last_print.get(spam_key, 0.0) > self.refresh_interval:
+                    self.last_print[spam_key] = now
                     
-                    rebote_w = imp.get("rebote_world_debug", [0, 0, 0])
-                    rebote_l = imp.get("rebote_local", [0, 0, 0])
+                    bounce_w = imp.get("bounce_world_debug", [0, 0, 0])
+                    bounce_l = imp.get("bounce_local", [0, 0, 0])
                     
-                    tipo = "FACETA" if "_f" in p_id else "PANEL"
+                    ctype = "FACET" if "_f" in c_id else "COLLECTOR"
                     
-                    print(f"{Color.WARNING}{Color.BOLD}[IMPACTO]{Color.ENDC} "
-                          f"{tipo}: {Color.BOLD}{p_id}{Color.ENDC} | "
-                          f"Global: ({rebote_w[0]:.1f}, {rebote_w[1]:.1f}, {rebote_w[2]:.1f})")
+                    print(f"{Color.WARNING}{Color.BOLD}[IMPACT]{Color.ENDC} "
+                          f"{ctype}: {Color.BOLD}{c_id}{Color.ENDC} | "
+                          f"Global: ({bounce_w[0]:.1f}, {bounce_w[1]:.1f}, {bounce_w[2]:.1f})")
         except:
             pass
 
-    def resultados_callback(self, msg):
+    def results_callback(self, msg):
         try:
             res = json.loads(msg.data)
-            print(f"\n{Color.OKGREEN}{Color.BOLD}=== REPORTE DE CALIBRACIÓN HELIOPOINT ==={Color.ENDC}")
+            print(f"\n{Color.OKGREEN}{Color.BOLD}=== HELIOPOINT CALIBRATION REPORT ==={Color.ENDC}")
             
             for p in res:
-                p_id = p.get('id', 'Desconocido')
-                muestras = p.get('muestras_tomadas', 0)
+                c_id = p.get('id', 'Unknown')
+                samples = p.get('samples_taken', 0)
                 error_x = p.get('error_x_mrad', 0.0)
                 error_y = p.get('error_y_mrad', 0.0)
                 
-                tipo = "FACETA" if "_f" in p_id else "PANEL"
-                print(f"{Color.OKGREEN}{Color.BOLD}[{tipo} {p_id}]{Color.ENDC} Muestras: {muestras}")
-                print(f" ├─ Error Media -> X: {error_x:.2f} mrad | Y: {error_y:.2f} mrad")
+                ctype = "FACET" if "_f" in c_id else "COLLECTOR"
+                print(f"{Color.OKGREEN}{Color.BOLD}[{ctype} {c_id}]{Color.ENDC} Samples: {samples}")
+                print(f" ├─ Mean Error -> X: {error_x:.2f} mrad | Y: {error_y:.2f} mrad")
             
             print(f"{Color.OKGREEN}{Color.BOLD}========================================={Color.ENDC}\n")
                 
         except Exception as e:
-            print(f"{Color.FAIL}[ERROR] Fallo al leer resultados de calibración: {e}{Color.ENDC}")
+            print(f"{Color.FAIL}[ERROR] Failed to read calibration results: {e}{Color.ENDC}")
     
     def log_callback(self, msg):
-        texto = msg.data
-        if any(word in texto for word in ["ERROR", "FAIL"]):
-            print(f"{Color.FAIL}{Color.BOLD}[¡ERROR!] {Color.ENDC}{Color.FAIL}{texto}{Color.ENDC}")
-        elif any(word in texto.upper() for word in ["ÉXITO", "OK"]):
-            print(f"{Color.OKGREEN}{Color.BOLD}[OK] {Color.ENDC}{texto}")
+        text = msg.data
+        if any(word in text.upper() for word in ["ERROR", "FAIL"]):
+            print(f"{Color.FAIL}{Color.BOLD}[ERROR!] {Color.ENDC}{Color.FAIL}{text}{Color.ENDC}")
+        elif any(word in text.upper() for word in ["SUCCESS", "OK"]):
+            print(f"{Color.OKGREEN}{Color.BOLD}[OK] {Color.ENDC}{text}")
 
 def main(args=None):
     rclpy.init(args=args)
-    nodo = FeedbackMonitorNode()
+    node = FeedbackMonitorNode()
     try:
-        rclpy.spin(nodo)
+        rclpy.spin(node)
     except KeyboardInterrupt:
         pass
     finally:
         if rclpy.ok():
-            nodo.destroy_node()
+            node.destroy_node()
             rclpy.shutdown()
 
 if __name__ == '__main__':

@@ -1,35 +1,6 @@
-#!/usr/bin/env python3
-"""
-Base world generator script for Gazebo.
-Creates an .sdf file with a sun, standard physics, and a plane with PBR texture.
-"""
-
-import argparse
-import os
-
-
-def create_base_world(world_name: str, texture_path: str, output_path: str) -> None:
-    """
-    Generates a Gazebo .sdf file with basic configuration and a ground texture.
-    
-    :param world_name: Internal name of the world in Gazebo.
-    :param texture_path: Path to the image (jpg/png) that will be used as albedo_map.
-    :param output_path: Full path where the .sdf file will be saved.
-    """
-    # We verify if the texture exists to warn the user
-    if not os.path.exists(texture_path):
-        print(f"[WARNING] Image not found at: {texture_path}")
-        print("Ensure the path is correct or Gazebo will paint the ground black/white.")
-
-    # We convert the image path to an absolute path for Gazebo
-    absolute_texture = os.path.abspath(texture_path)
-
-    # XML/SDF template with integrated PBR and base plugins.
-    # (In structured multiline text templates, PEP 8's 79 character limit 
-    # is ignored so as not to corrupt the XML format).
-    sdf_content = f"""<?xml version="1.0" encoding="UTF-8"?>
+<?xml version="1.0" encoding="UTF-8"?>
 <sdf version="1.9">
-  <world name='{world_name}'>
+  <world name='test1'>
     <physics type="ode">
       <max_step_size>0.004</max_step_size>
       <real_time_factor>1.0</real_time_factor>
@@ -74,7 +45,7 @@ def create_base_world(world_name: str, texture_path: str, output_path: str) -> N
             <diffuse>0.8 0.8 0.8 1</diffuse>
             <pbr>
               <metal>
-                <albedo_map>{absolute_texture}</albedo_map>
+                <albedo_map>/home/ruben/Carpeta_TFG_Provisional/src/TFG_inspeccion_plantas_termosolares/simulacion/simulacion/models/textures/arenosillo.png</albedo_map>
                 <roughness>0.9</roughness> 
                 <metalness>0.0</metalness> 
               </metal>
@@ -127,46 +98,3 @@ def create_base_world(world_name: str, texture_path: str, output_path: str) -> N
     </spherical_coordinates>
   </world>
 </sdf>
-"""
-    
-    # Create the output directory if it doesn't exist, preventing errors if only a file is passed
-    output_directory = os.path.dirname(output_path)
-    if output_directory:
-        os.makedirs(output_directory, exist_ok=True)
-
-    # Write the final file
-    with open(output_path, 'w', encoding='utf-8') as f:
-        f.write(sdf_content)
-        
-    print(f"[SUCCESS] World '{world_name}' successfully generated at: {output_path}")
-
-
-if __name__ == "__main__":
-    # Terminal argument configuration
-    parser = argparse.ArgumentParser(description="Base world generator for Gazebo")
-    
-    parser.add_argument(
-        "--name", 
-        type=str, 
-        required=True, 
-        help="Name of the world (e.g. sevilla_plant)"
-    )
-    
-    parser.add_argument(
-        "--texture", 
-        type=str, 
-        required=True, 
-        help="Path to the jpg/png image for the ground"
-    )
-                    
-    parser.add_argument(
-        "--output", 
-        type=str, 
-        required=True, 
-        help="Path and name of the .sdf file to generate"
-    )
-    
-    args = parser.parse_args()
-    
-    # Execute the main function
-    create_base_world(args.name, args.texture, args.output)

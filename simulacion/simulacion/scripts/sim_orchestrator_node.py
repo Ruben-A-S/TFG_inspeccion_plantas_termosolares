@@ -7,340 +7,340 @@ import rclpy
 from rclpy.node import Node
 from std_msgs.msg import Float64MultiArray, String
 
-# Importamos script externo generador de mundos
-from world_generator import crear_mundo_base
+# We import the external world generator script
+from world_generator import create_base_world
 
 
 class SimOrchestratorNode(Node):
     """
-    Nodo Orquestador de la simulación.
+    Simulation Orchestrator Node.
     
-    Se encarga de almacenar la configuración enviada por el usuario,
-    generar el mundo, lanzar PX4 SITL con Gazebo, y enviar las órdenes
-    de carga/descarga de paneles solares a los nodos correspondientes.
+    It is responsible for storing the configuration sent by the user,
+    generating the world, launching PX4 SITL with Gazebo, and sending the
+    load/empty solar collector commands to the corresponding nodes.
     """
 
     def __init__(self):
         super().__init__('sim_orchestrator_node')
 
-        # --- ESTADO INTERNO ---
-        self.config_fecha = {"fecha": "10/02/2001", "hora": "12:34"}
-        self.config_mundo = {"nombre": "prueba1", "textura": "arenosillo.png"}
-        self.config_paneles = {"modelo": "panel", "ruta_csv": "Crescent_Dunes.csv"}
-        self.config_dron = {"modelo": "x500", "x": 0.0, "y": 0.0}
-        self.proceso_simulacion = None 
+        # --- INTERNAL STATE ---
+        self.config_date = {"date": "10/02/2001", "time": "12:34"}
+        self.config_world = {"name": "test1", "texture": "arenosillo.png"}
+        self.config_collectors = {"model": "collector", "csv_path": "Crescent_Dunes.csv"}
+        self.config_drone = {"model": "x500", "x": 0.0, "y": 0.0}
+        self.simulation_process = None 
 
-        self.mundo_generado = {"nombre": "prueba1"}
-        self.paneles_generados = {"ruta_csv": "mapa_3.txt"} 
+        self.generated_world = {"name": "test1"}
+        self.generated_collectors = {"csv_path": "mapa_3.txt"}
         
-        # --- PUBLICADORES ---
-        self.pub_gestion_mapa = self.create_publisher(String, '/sim_cmd/map_management', 10)
+        # --- PUBLISHERS ---
+        self.pub_map_management = self.create_publisher(String, '/sim_cmd/map_management', 10)
         
-        self.pub_estado = self.create_publisher(String, '/sim_status/state', 10)
+        self.pub_state = self.create_publisher(String, '/sim_status/state', 10)
         
         self.pub_log = self.create_publisher(String, '/sim_status/log', 10)
         
-        self.pub_sim_activa = self.create_publisher(String, '/sim_status/active_sim', 10)
+        self.pub_active_sim = self.create_publisher(String, '/sim_status/active_sim', 10)
         
-        self.pub_params_control = self.create_publisher(Float64MultiArray, '/control_param', 10)
-
-        # --- SUSCRIPTORES ---
-        self.create_subscription(String, '/sim_cmd/date_config', self.config_fecha_callback, 10)
+        self.pub_control_params = self.create_publisher(Float64MultiArray, '/control_param', 10)
         
-        self.create_subscription(String, '/sim_cmd/world_config', self.config_mundo_callback, 10)
+        # --- SUBSCRIBERS ---
+        self.create_subscription(String, '/sim_cmd/date_config', self.config_date_callback, 10)
         
-        self.create_subscription(String, '/sim_cmd/panel_config', self.config_paneles_callback, 10)
+        self.create_subscription(String, '/sim_cmd/world_config', self.config_world_callback, 10)
         
-        self.create_subscription(String, '/sim_cmd/drone_config', self.config_dron_callback, 10)
+        self.create_subscription(String, '/sim_cmd/collector_config', self.config_collectors_callback, 10)
         
-        self.create_subscription(String, '/sim_cmd/action', self.accion_callback, 10)
+        self.create_subscription(String, '/sim_cmd/drone_config', self.config_drone_callback, 10)
+        
+        self.create_subscription(String, '/sim_cmd/action', self.action_callback, 10)
         
         self.create_subscription(String, '/sim_cmd/rotate_camera', self.rotate_camera_callback, 10)
         
-        self.create_subscription(String, '/sim_cmd/rotate_panel', self.rotate_panel_callback, 10)
+        self.create_subscription(String, '/sim_cmd/rotate_collector', self.rotate_collector_callback, 10)
 
-        self.enviar_log("Nodo Orquestador Iniciado. Esperando configuraciones...")
-        self.cambiar_estado("ESPERANDO_DATOS")
+        self.send_log("Orchestrator Node Started. Waiting for configurations...")
+        self.change_state("WAITING_FOR_DATA")
 
     # ==========================================
-    # CALLBACKS DE RECUPERACIÓN DE DATOS
+    # DATA CALLBACKS
     # ==========================================
     
-    def config_fecha_callback(self, msg):
-        """Actualiza la fecha y hora interna."""
+    def config_date_callback(self, msg):
+        """Updates internal date and time."""
         try:
-            self.config_fecha = json.loads(msg.data)
-            fecha = self.config_fecha.get('fecha')
-            hora = self.config_fecha.get('hora')
-            self.enviar_log(f"Configuración de fecha actualizada: {fecha} a las {hora}")
+            self.config_date = json.loads(msg.data)
+            date_str = self.config_date.get('date')
+            time_str = self.config_date.get('time')
+            self.send_log(f"Date configuration updated: {date_str} at {time_str}")
         except json.JSONDecodeError:
-            self.enviar_log("ERROR: JSON de fecha inválida.")
+            self.send_log("ERROR: Invalid date JSON.")
             
-    def config_mundo_callback(self, msg):
-        """Actualiza el nombre y textura del mundo a generar."""
+    def config_world_callback(self, msg):
+        """Updates the name and texture of the world to generate."""
         try:
-            self.config_mundo = json.loads(msg.data)
-            nombre = self.config_mundo.get('nombre')
-            textura = self.config_mundo.get('textura')
-            self.enviar_log(f"Configuración de mundo actualizada: {nombre} (textura: {textura})")
+            self.config_world = json.loads(msg.data)
+            name = self.config_world.get('name')
+            texture = self.config_world.get('texture')
+            self.send_log(f"World configuration updated: {name} (texture: {texture})")
         except json.JSONDecodeError:
-            self.enviar_log("ERROR: JSON de mundo inválido.")
+            self.send_log("ERROR: Invalid world JSON.")
 
-    def config_paneles_callback(self, msg):
-        """Actualiza la configuración de generación de paneles."""
+    def config_collectors_callback(self, msg):
+        """Updates the collector generation configuration."""
         try:
-            self.config_paneles = json.loads(msg.data)
-            ruta = self.config_paneles.get('ruta_csv')
-            modelo = self.config_paneles.get('modelo')
-            self.enviar_log(f"Configuración de paneles actualizada: {ruta} (modelo: {modelo})")
+            self.config_collectors = json.loads(msg.data)
+            csv_path = self.config_collectors.get('csv_path')
+            model = self.config_collectors.get('model')
+            self.send_log(f"Collector configuration updated: {csv_path} (model: {model})")
         except json.JSONDecodeError:
-            self.enviar_log("ERROR: JSON de paneles inválido.")
+            self.send_log("ERROR: Invalid collector JSON.")
 
-    def config_dron_callback(self, msg):
-        """Actualiza el modelo de dron y su posición de despegue."""
+    def config_drone_callback(self, msg):
+        """Updates the drone model and its takeoff position."""
         try:
-            self.config_dron = json.loads(msg.data)
-            modelo = self.config_dron.get('modelo')
-            pos_x = self.config_dron.get('x')
-            pos_y = self.config_dron.get('y')
-            self.enviar_log(f"Configuración de dron actualizada: {modelo} en X={pos_x}, Y={pos_y}")
+            self.config_drone = json.loads(msg.data)
+            model = self.config_drone.get('model')
+            pos_x = self.config_drone.get('x')
+            pos_y = self.config_drone.get('y')
+            self.send_log(f"Drone configuration updated: {model} at X={pos_x}, Y={pos_y}")
         except json.JSONDecodeError:
-            self.enviar_log("ERROR: JSON de dron inválido.")
+            self.send_log("ERROR: Invalid drone JSON.")
     
     def rotate_camera_callback(self, msg):
-        """Actualiza el pitch de la cámara del dron."""
+        """Updates the drone camera pitch."""
         try:
-            datos = json.loads(msg.data)
-            grados = datos.get("angulo", 45.0)
+            data = json.loads(msg.data)
+            degrees = data.get("angle", 45.0)
             
-            # Convertimos a radianes aquí para que la calculadora reciba el dato listo
-            radianes = grados * (3.14159265 / 180.0)
+            # Convert to radians here so the calculator receives the ready-to-use data
+            radians = degrees * (3.14159265 / 180.0)
             
-            # Preparamos el mensaje para la calculadora (Float64MultiArray)
+            # Prepare the message for the calculator (Float64MultiArray)
             msg_control = Float64MultiArray()
-            # [Angulo, Focal (por defecto 1.5), Distorsión (0.0)]
-            msg_control.data = [float(radianes), 1.5, 0.0]        
-            self.pub_params_control.publish(msg_control)
+            # [Angle, Focal (default 1.5), Distortion (0.0)]
+            msg_control.data = [float(radians), 1.5, 0.0]        
+            self.pub_control_params.publish(msg_control)
             
-            self.enviar_log(f"Cámara movida a {grados} grados ({radianes:.3f} rad)")
+            self.send_log(f"Camera moved to {degrees} degrees ({radians:.3f} rad)")
             
         except Exception as e:
-            self.enviar_log(f"ERROR al procesar ángulo de cámara: {e}")
+            self.send_log(f"ERROR processing camera angle: {e}")
     
-    def rotate_panel_callback(self, msg):
-        """Escucha el comando de girar panel para registrarlo en el log global."""
+    def rotate_collector_callback(self, msg):
+        """Listens to the rotate collector command to register it in the global log."""
         try:
-            datos = json.loads(msg.data)
-            id_panel = datos.get("id_panel", "panel_0") 
+            data = json.loads(msg.data)
+            c_id = data.get("collector_id", "collector_0") 
             
-            # Leemos la faceta para que el log sea exacto
-            id_faceta = datos.get("id_faceta", "todas") 
+            # Read the facet so the log is exact
+            f_id = data.get("facet_id", "all") 
             
-            if "_f" in id_faceta:
-                roll_inc_grados = datos.get("roll_inc", 0.0)
-                pitch_inc_grados = datos.get("pitch_inc", 0.0)
+            if "_f" in f_id:
+                roll_inc_degrees = data.get("roll_inc", 0.0)
+                pitch_inc_degrees = data.get("pitch_inc", 0.0)
             
-                # Actualizamos el texto para reflejar si giramos todo o solo una pieza
-                self.enviar_log(
-                    f"Orden recibida: Girar {id_panel} (Faceta: {id_faceta}) "
-                    f"(Roll: +{roll_inc_grados}º, Pitch: +{pitch_inc_grados}º). "
-                    f"Delegando ejecución al Gestor de Mapa."
+                # Update text to reflect if we rotate everything or just one piece
+                self.send_log(
+                    f"Command received: Rotate {c_id} (Facet: {f_id}) "
+                    f"(Roll: +{roll_inc_degrees}º, Pitch: +{pitch_inc_degrees}º). "
+                    f"Delegating execution to the Map Manager."
                 )
                 
             else:
-                yaw_inc_grados = datos.get("yaw_inc", 0.0)
-                pitch_inc_grados = datos.get("pitch_inc", 0.0)
+                yaw_inc_degrees = data.get("yaw_inc", 0.0)
+                pitch_inc_degrees = data.get("pitch_inc", 0.0)
             
-                # Actualizamos el texto para reflejar si giramos todo o solo una pieza
-                self.enviar_log(
-                    f"Orden recibida: Girar {id_panel} (Faceta: {id_faceta}) "
-                    f"(Yaw: +{yaw_inc_grados}º, Pitch: +{pitch_inc_grados}º). "
-                    f"Delegando ejecución al Gestor de Mapa."
+                # Update text to reflect if we rotate everything or just one piece
+                self.send_log(
+                    f"Command received: Rotate {c_id} (Facet: {f_id}) "
+                    f"(Yaw: +{yaw_inc_degrees}º, Pitch: +{pitch_inc_degrees}º). "
+                    f"Delegating execution to the Map Manager."
                 )
             
         except Exception as e:
-            self.enviar_log(f"ERROR al procesar giro de panel en el Orquestador: {e}")
-
+            self.send_log(f"ERROR processing collector rotation in the Orchestrator: {e}")
+            
     # ==========================================
-    # CALLBACK DE ACCIONES PRINCIPALES
+    # MAIN ACTIONS CALLBACK
     # ==========================================
     
-    def accion_callback(self, msg):
-        """Recibe una orden de acción principal (GENERAR, POBLAR, etc.)."""
-        orden = msg.data.upper()
+    def action_callback(self, msg):
+        """Receives a main action command (GENERATE, POPULATE, etc.)."""
+        command = msg.data.upper()
         
-        if orden == "GENERAR":
-            self.ejecutar_generacion_total()
-        elif orden == "POBLAR":
-            self.inyectar_obstaculos()
-        elif orden == "VACIAR":
-            self.eliminar_obstaculos()
-        elif orden == "TERMINAR":
-            self.cerrar_simulacion()
-        elif orden == "SALIR":
-            self.enviar_log("Recibida orden de salida total. Limpiando...")
-            self.cerrar_simulacion()
+        if command == "GENERATE":
+            self.execute_full_generation()
+        elif command == "FILL":
+            self.inject_collectors()
+        elif command == "EMPTY":
+            self.remove_collectors()
+        elif command == "TERMINATE":
+            self.close_simulation()
+        elif command == "EXIT":
+            self.send_log("Total exit command received. Cleaning up...")
+            self.close_simulation()
             raise SystemExit  
         else:
-            self.enviar_log(f"Orden desconocida: {orden}")
+            self.send_log(f"Unknown command: {command}")
 
     # ==========================================
-    # GENERACION DE MUNDO
+    # WORLD GENERATION
     # ==========================================
     
-    def ejecutar_generacion_total(self):
-        """Inicia Gazebo y PX4 SITL con las configuraciones actuales."""
-        if self.proceso_simulacion is not None:
-            self.enviar_log(
-                "ADVERTENCIA: La simulación ya está corriendo. "
-                "Cierra la actual (Opción 10) antes de generar otra."
+    def execute_full_generation(self):
+        """Starts Gazebo and PX4 SITL with the current configurations."""
+        if self.simulation_process is not None:
+            self.send_log(
+                "WARNING: The simulation is already running. "
+                "Close the current one (Option 10) before generating another."
             )
             return
             
-        self.cambiar_estado("ARRANCANDO_SIMULACION")
-        self.enviar_log("Fase 1: Preparando mundo virtual...")
+        self.change_state("STARTING_SIMULATION")
+        self.send_log("Phase 1: Preparing virtual world...")
         
-        nombre_mundo = self.config_mundo.get('nombre', 'prueba1')
-        nombre_textura = self.config_mundo.get('textura', 'arenosillo.png')
+        world_name = self.config_world.get('name', 'test1')
+        texture_name = self.config_world.get('texture', 'arenosillo.png')
         
-        # Rutas hardcodeadas (se podrían extraer a parámetros de ROS 2 en el futuro)
+        # Hardcoded paths (could be extracted to ROS 2 parameters in the future)
         base_dir = os.path.expanduser("~/Carpeta_TFG_Provisional/src/TFG_inspeccion_plantas_termosolares")
-        ruta_mundo_original = os.path.join(base_dir, "simulacion/simulacion/worlds", f"{nombre_mundo}.sdf")
-        ruta_textura = os.path.join(base_dir, "simulacion/simulacion/models/textures", nombre_textura)
+        original_world_path = os.path.join(base_dir, "simulacion/simulacion/worlds", f"{world_name}.sdf")
+        texture_path = os.path.join(base_dir, "simulacion/simulacion/models/textures", texture_name)
         
         try:
-            crear_mundo_base(nombre_mundo, ruta_textura, ruta_mundo_original)
-            self.enviar_log(f"Mundo '{nombre_mundo}' generado exitosamente.")
+            create_base_world(world_name, texture_path, original_world_path)
+            self.send_log(f"World '{world_name}' generated successfully.")
         except Exception as e:
-            self.enviar_log(f"ERROR al generar el mundo: {e}")
+            self.send_log(f"ERROR generating the world: {e}")
             return 
             
-        self.enviar_log("Fase 2: Preparando rutas para PX4...")
+        self.send_log("Phase 2: Preparing paths for PX4...")
         
-        modelo_dron = self.config_dron.get('modelo', 'x500')
-        pos_x = self.config_dron.get('x', 0.0)
-        pos_y = self.config_dron.get('y', 0.0)
+        drone_model = self.config_drone.get('model', 'x500')
+        pos_x = self.config_drone.get('x', 0.0)
+        pos_y = self.config_drone.get('y', 0.0)
 
-        ruta_px4_worlds = os.path.expanduser("~/PX4-Autopilot/Tools/simulation/gz/worlds")
-        ruta_mundo_destino = os.path.join(ruta_px4_worlds, f"{nombre_mundo}.sdf")
+        px4_worlds_path = os.path.expanduser("~/PX4-Autopilot/Tools/simulation/gz/worlds")
+        destination_world_path = os.path.join(px4_worlds_path, f"{world_name}.sdf")
 
-        if os.path.exists(ruta_mundo_original):
-            self.enviar_log("Copiando mundo a entorno PX4...")
-            subprocess.run(f"cp {ruta_mundo_original} {ruta_mundo_destino}", shell=True)
+        if os.path.exists(original_world_path):
+            self.send_log("Copying world to PX4 environment...")
+            subprocess.run(f"cp {original_world_path} {destination_world_path}", shell=True)
         else:
-            self.enviar_log(f"ADVERTENCIA: No se encontró el archivo {ruta_mundo_original}.")
+            self.send_log(f"WARNING: File {original_world_path} was not found.")
 
-        comando = (
-            f"export PX4_GZ_WORLD={nombre_mundo} && "
+        command = (
+            f"export PX4_GZ_WORLD={world_name} && "
             f"export PX4_GZ_MODEL_POSE='{pos_x},{pos_y},0.5,0,0,0' && "
-            f"cd ~/PX4-Autopilot && make px4_sitl gz_{modelo_dron}"
+            f"cd ~/PX4-Autopilot && make px4_sitl gz_{drone_model}"
         )
         
-        self.enviar_log("Fase 3: Lanzando simulación...")
-        self.proceso_simulacion = subprocess.Popen(
-            comando, shell=True, executable='/bin/bash'
+        self.send_log("Phase 3: Launching simulation...")
+        self.simulation_process = subprocess.Popen(
+            command, shell=True, executable='/bin/bash'
         )
         
-        self.cambiar_estado("SIMULACION_CORRIENDO")
-        self.mundo_generado = {"nombre": nombre_mundo}
+        self.change_state("SIMULATION_RUNNING")
+        self.generated_world = {"name": world_name}
         
-        config_activa = {
-            "mundo": nombre_mundo,
-            "dron": modelo_dron
+        active_config = {
+            "world": world_name,
+            "drone": drone_model
         }
-        msg_activa = String()
-        msg_activa.data = json.dumps(config_activa)
-        self.pub_sim_activa.publish(msg_activa)
+        msg_active = String()
+        msg_active.data = json.dumps(active_config)
+        self.pub_active_sim.publish(msg_active)
         
-    def cerrar_simulacion(self):
-        """Mata los procesos de Gazebo y PX4."""
-        self.enviar_log("Cerrando simulador y limpiando procesos de Linux...")
-        # Usa stderr=subprocess.DEVNULL para ocultar errores si no hay procesos que matar
+    def close_simulation(self):
+        """Kills Gazebo and PX4 processes."""
+        self.send_log("Closing simulator and cleaning up Linux processes...")
+        # Uses stderr=subprocess.DEVNULL to hide errors if there are no processes to kill
         subprocess.run("killall -9 ruby px4 gz", shell=True, stderr=subprocess.DEVNULL)
-        self.proceso_simulacion = None
-        self.cambiar_estado("ESPERANDO_DATOS")
-        self.enviar_log("Simulador cerrado.")
+        self.simulation_process = None
+        self.change_state("WAITING_FOR_DATA")
+        self.send_log("Simulator closed.")
 
     # ==========================================
-    # GESTIÓN DE PANELES
-    # ==========================================
-    
-    def inyectar_obstaculos(self):
-        """Pide al nodo de carga de mapas que inserte los paneles solares."""
-        fecha_mundo = self.config_fecha.get('fecha', '10/02/2001')
-        hora_mundo = self.config_fecha.get('hora', '12:34')
-        nombre_csv = self.config_paneles.get('ruta_csv', 'mapa_3.txt')
-        modelo_panel = self.config_paneles.get('modelo', 'panel')
-        nombre_mundo = self.mundo_generado.get('nombre', 'prueba1')
-        
-        # 1. Actualizamos el estado interno
-        self.paneles_generados = {"ruta_csv": nombre_csv}
-        
-        # 2. Empaquetamos la orden
-        orden = {
-            "accion": "CARGAR",
-            "fecha": fecha_mundo,
-            "hora": hora_mundo,
-            "csv": nombre_csv,
-            "modelo": modelo_panel,
-            "mundo": nombre_mundo
-        }
-        
-        # 3. Enviamos la orden al nodo load_map
-        msg = String()
-        msg.data = json.dumps(orden)
-        self.pub_gestion_mapa.publish(msg)
-        
-        self.enviar_log(f"Orden enviada a load_map para poblar '{nombre_mundo}' con '{nombre_csv}'.")
-        
-    def eliminar_obstaculos(self):
-        """Pide al nodo de carga de mapas que elimine los paneles solares."""
-        nombre_csv = self.paneles_generados.get('ruta_csv', 'mapa_3.txt')
-        nombre_mundo = self.mundo_generado.get('nombre', 'prueba1')
-
-        orden = {
-            "accion": "VACIAR",
-            "csv": nombre_csv,
-            "mundo": nombre_mundo
-        }
-
-        msg = String()
-        msg.data = json.dumps(orden)
-        self.pub_gestion_mapa.publish(msg)
-        
-        self.enviar_log(f"Orden enviada a load_map para vaciar el mapa '{nombre_csv}'.")
-        self.paneles_generados = {}
-
-    # ==========================================
-    # UTILIDADES
+    # COLLECTOR MANAGEMENT
     # ==========================================
     
-    def enviar_log(self, texto):
-        """Publica un mensaje en el tópico de logs y lo imprime localmente."""
+    def inject_collectors(self):
+        """Asks the map loading node to insert the solar collectors."""
+        world_date = self.config_date.get('date', '10/02/2001')
+        world_time = self.config_date.get('time', '12:34')
+        csv_name = self.config_collectors.get('csv_path', 'mapa_3.txt')
+        collector_model = self.config_collectors.get('model', 'collector')
+        world_name = self.generated_world.get('name', 'test1')
+        
+        # 1. Update internal state
+        self.generated_collectors = {"csv_path": csv_name}
+        
+        # 2. Package the command
+        command = {
+            "action": "LOAD",
+            "date": world_date,
+            "time": world_time,
+            "csv": csv_name,
+            "model": collector_model,
+            "world": world_name
+        }
+        
+        # 3. Send the command to the load_map node
         msg = String()
-        msg.data = texto
+        msg.data = json.dumps(command)
+        self.pub_map_management.publish(msg)
+        
+        self.send_log(f"Command sent to load_map to fill '{world_name}' with '{csv_name}'.")
+        
+    def remove_collectors(self):
+        """Asks the map loading node to remove the solar collectors."""
+        csv_name = self.generated_collectors.get('csv_path', 'mapa_3.txt')
+        world_name = self.generated_world.get('name', 'test1')
+
+        command = {
+            "action": "EMPTY",
+            "csv": csv_name,
+            "world": world_name
+        }
+
+        msg = String()
+        msg.data = json.dumps(command)
+        self.pub_map_management.publish(msg)
+        
+        self.send_log(f"Command sent to load_map to empty the map '{csv_name}'.")
+        self.generated_collectors = {}
+
+    # ==========================================
+    # UTILITIES
+    # ==========================================
+    
+    def send_log(self, text):
+        """Publishes a message to the logs topic and prints it locally."""
+        msg = String()
+        msg.data = text
         self.pub_log.publish(msg)
-        self.get_logger().info(texto)
+        self.get_logger().info(text)
 
-    def cambiar_estado(self, nuevo_estado):
-        """Actualiza el estado global de la simulación."""
+    def change_state(self, new_state):
+        """Updates the global simulation state."""
         msg = String()
-        msg.data = nuevo_estado
-        self.pub_estado.publish(msg)
+        msg.data = new_state
+        self.pub_state.publish(msg)
 
 
 def main(args=None):
     rclpy.init(args=args)
-    nodo = SimOrchestratorNode()
+    node = SimOrchestratorNode()
     
     try:
-        rclpy.spin(nodo)
+        rclpy.spin(node)
     except SystemExit:
-        nodo.get_logger().info("Apagado del nodo solicitado por el usuario. Adiós.")
+        node.get_logger().info("Node shutdown requested by the user. Goodbye.")
     except KeyboardInterrupt:
-        nodo.get_logger().info("Apagado mediante Ctrl+C.")
+        node.get_logger().info("Shutdown via Ctrl+C.")
     finally:
-        nodo.destroy_node()
+        node.destroy_node()
         if rclpy.ok():
             rclpy.shutdown()
 

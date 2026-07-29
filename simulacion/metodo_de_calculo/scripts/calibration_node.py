@@ -12,230 +12,230 @@ from std_srvs.srv import Trigger
 
 class CalibrationNode(Node):
     """
-    Nodo encargado de aplicar el método matemático HelioPoint.
-    Versión Industrial Segura + Soporte Multifacetas:
-    - Alineación mediante Producto Cruzado Vectorial puro.
-    - Media móvil para cancelación de defectos del espejo.
-    - Soporta tanto paneles monolíticos como mallas de facetas.
+    Node in charge of applying the mathematical HelioPoint method.
+    Secure Industrial Version + Multi-Facet Support:
+    - Alignment via pure Vectorial Cross Product.
+    - Moving average for mirror defect cancellation.
+    - Supports both monolithic collectors and facet meshes.
     """
 
     def __init__(self):
         super().__init__('calibration_node')
         
-        self.paneles_teoria = {} 
-        self.historial_errores = {} 
+        self.theoretical_collectors = {} 
+        self.error_history = {} 
 
-        # --- CLIENTES Y SUSCRIPCIONES ---
-        self.cli_teoria = self.create_client(Trigger, 'get_panel_theory')
+        # --- CLIENTS AND SUBSCRIPTIONS ---
+        self.cli_theory = self.create_client(Trigger, 'get_collector_theory')
         
-        self.create_subscription(String, '/sim_status/panel_updates', self.actualizar_teoria_callback, 10)
-        self.create_subscription(String, '/inspection/filtered_data', self.datos_filtrados_callback, 10)
+        self.create_subscription(String, '/sim_status/collector_updates', self.update_theory_callback, 10)
+        self.create_subscription(String, '/inspection/filtered_data', self.filtered_data_callback, 10)
         self.create_subscription(Float64MultiArray, '/control_param', self.param_callback, qos_profile_sensor_data)
         
-        # --- PUBLICADORES ---
-        self.pub_resultados = self.create_publisher(String, '/calibration/results', 10)
+        # --- PUBLISHERS ---
+        self.pub_results = self.create_publisher(String, '/calibration/results', 10)
         self.error_pub = self.create_publisher(Float64MultiArray, '/heliostat_processed_errors', 10)
 
-        self.panel_en_enfoque = None
-        self.buffer_media_movil = [] 
+        self.focused_collector = None
+        self.moving_average_buffer = [] 
         
-        # Distancia de la cámara al LED (en el sistema local de la cámara)
+        # Distance from the camera to the LED (in the camera's local system)
         self.d_cam_led = np.array([0.0, 0.0, -0.6])  
         
-        # Ángulo inicial por defecto (45 grados)
-        self.angulo_cam = 0.785  
+        # Default initial angle (45 degrees)
+        self.cam_angle = 0.785  
 
-        self.pedir_mapa_teorico()
-        self.get_logger().info("Cerebro HelioPoint iniciado [VERSIÓN FACETAS UNIFICADA]. Esperando teoría...")
+        self.request_theoretical_map()
+        self.get_logger().info("HelioPoint Brain started [UNIFIED FACET VERSION]. Waiting for theory...")
 
-    def pedir_mapa_teorico(self):
-        if not self.cli_teoria.service_is_ready():
+    def request_theoretical_map(self):
+        if not self.cli_theory.service_is_ready():
             return
         req = Trigger.Request()
-        self.cli_teoria.call_async(req).add_done_callback(self.al_recibir_teoria)
+        self.cli_theory.call_async(req).add_done_callback(self.on_theory_received)
 
     # ==========================================
-    # LA MAGIA: CINEMÁTICA UNIFICADA EN MEMORIA
+    # THE MAGIC: UNIFIED KINEMATICS IN MEMORY
     # ==========================================
-    def al_recibir_teoria(self, futuro):
+    def on_theory_received(self, future):
         try:
-            res = futuro.result()
+            res = future.result()
             if res.success:
-                lista = json.loads(res.message)
-                self.paneles_teoria = {}
+                c_list = json.loads(res.message)
+                self.theoretical_collectors = {}
                 
-                for p in lista:
-                    # Cinemática del panel base (Yaw -> Z, Pitch -> Y)
-                    rot_yaw = R.from_euler('z', p.get('yaw', 0.0))
-                    rot_pitch = R.from_euler('y', p.get('pitch', 0.0))
-                    r_p_global = rot_yaw * rot_pitch
+                for c in c_list:
+                    # Base collector kinematics (Yaw -> Z, Pitch -> Y)
+                    rot_yaw = R.from_euler('z', c.get('yaw', 0.0))
+                    rot_pitch = R.from_euler('y', c.get('pitch', 0.0))
+                    global_c_r = rot_yaw * rot_pitch
                     
-                    pos_p_global = np.array([p.get('x', 0.0), p.get('y', 0.0), p.get('z', 0.0)])
+                    global_c_pos = np.array([c.get('x', 0.0), c.get('y', 0.0), c.get('z', 0.0)])
                     
-                    if 'facetas' in p:
-                        for f in p['facetas']:
-                            offset_local = np.array(f.get('offset', [0.0, 0.0, 0.0]))
-                            pos_f = pos_p_global + r_p_global.apply(offset_local)
+                    if 'facets' in c:
+                        for f in c['facets']:
+                            local_offset = np.array(f.get('offset', [0.0, 0.0, 0.0]))
+                            pos_f = global_c_pos + global_c_r.apply(local_offset)
                             
-                            # Cinemática local de la faceta (Roll -> X, Pitch -> Y)
-                            rot_canting = R.from_euler('xy', [f.get('cant_roll', 0.0), f.get('cant_pitch', 0.0)])
-                            r_f_final = r_p_global * rot_canting
+                            # Local facet kinematics (Roll -> X, Pitch -> Y)
+                            canting_rot = R.from_euler('xy', [f.get('cant_roll', 0.0), f.get('cant_pitch', 0.0)])
+                            final_f_r = global_c_r * canting_rot
                             
-                            # Guardamos el objeto Rotation puro para no perder datos
-                            self.paneles_teoria[str(f['id'])] = {
+                            # We store the pure Rotation object so no data is lost
+                            self.theoretical_collectors[str(f['id'])] = {
                                 'pos': pos_f,
-                                'rot': r_f_final
+                                'rot': final_f_r
                             }
                     else:
-                        self.paneles_teoria[str(p['id'])] = {
-                            'pos': pos_p_global,
-                            'rot': r_p_global
+                        self.theoretical_collectors[str(c['id'])] = {
+                            'pos': global_c_pos,
+                            'rot': global_c_r
                         }
                         
-                self.get_logger().info(f"Plano Teórico Aplanado: {len(self.paneles_teoria)} entidades rastreables.")
+                self.get_logger().info(f"Flattened Theoretical Plane: {len(self.theoretical_collectors)} trackable entities.")
         except Exception as e:
-            self.get_logger().error(f"Error cargando teoría: {e}")
+            self.get_logger().error(f"Error loading theory: {e}")
 
-    def actualizar_teoria_callback(self, msg):
-        self.pedir_mapa_teorico()
+    def update_theory_callback(self, msg):
+        self.request_theoretical_map()
 
     def param_callback(self, msg):
         if len(msg.data) >= 1: 
-            self.angulo_cam = float(msg.data[0])
+            self.cam_angle = float(msg.data[0])
 
-    def calcular_vector_medido(self, p_cam, r_dron_base, p_reflex):
-        # r_dron_base es la rotación del dron. Añadimos el pitch de la cámara.
-        r_cam_real = r_dron_base * R.from_euler('y', self.angulo_cam, degrees=False)
-        p_led = p_cam + r_cam_real.apply(self.d_cam_led)
+    def calculate_measured_vector(self, p_cam, base_drone_r, p_reflex):
+        # base_drone_r is the drone's rotation. We add the camera pitch.
+        real_cam_r = base_drone_r * R.from_euler('y', self.cam_angle, degrees=False)
+        p_led = p_cam + real_cam_r.apply(self.d_cam_led)
         
-        v_reflejado = p_cam - p_reflex
-        v_reflejado_unitario = v_reflejado / np.linalg.norm(v_reflejado)
+        reflected_v = p_cam - p_reflex
+        unit_reflected_v = reflected_v / np.linalg.norm(reflected_v)
         
-        v_incidente = p_led - p_reflex
-        v_incidente_unitario = v_incidente / np.linalg.norm(v_incidente)
+        incident_v = p_led - p_reflex
+        unit_incident_v = incident_v / np.linalg.norm(incident_v)
         
-        n_meas = v_incidente_unitario + v_reflejado_unitario
+        n_meas = unit_incident_v + unit_reflected_v
         return n_meas / np.linalg.norm(n_meas)
 
-    def datos_filtrados_callback(self, msg):
-        if not self.paneles_teoria:
-            self.get_logger().warn("Esperando mapa teórico...", throttle_duration_sec=3.0)
+    def filtered_data_callback(self, msg):
+        if not self.theoretical_collectors:
+            self.get_logger().warn("Waiting for theoretical map...", throttle_duration_sec=3.0)
             return 
 
         try:
-            datos_filtrados = json.loads(msg.data)
+            filtered_data = json.loads(msg.data)
         except json.JSONDecodeError:
-            self.get_logger().error("Error: Mensaje JSON no válido.", throttle_duration_sec=3.0)
+            self.get_logger().error("Error: Invalid JSON message.", throttle_duration_sec=3.0)
             return
 
-        if not datos_filtrados: return
+        if not filtered_data: return
 
-        resultados_iteracion = []
+        iteration_results = []
 
-        for dato in datos_filtrados:
-            id_panel = str(dato.get("id_panel"))
+        for data in filtered_data:
+            collector_id = str(data.get("collector_id"))
             
-            # Buscamos la entidad en memoria
-            panel_teo = self.paneles_teoria.get(id_panel)
-            if not panel_teo:
+            # We look for the entity in memory
+            theo_c = self.theoretical_collectors.get(collector_id)
+            if not theo_c:
                 continue
                 
-            p_teo = panel_teo['pos']
-            r_teo_original = panel_teo['rot']
+            p_theo = theo_c['pos']
+            original_theo_r = theo_c['rot']
             
-            # El vector normal del espejo en reposo (como está tumbado en XY) es el eje Z
-            n_teo_global = r_teo_original.apply([0.0, 0.0, 1.0])
+            # The theoretical normal of the mirror at rest (lying on XY) is the Z axis
+            global_theo_n = original_theo_r.apply([0.0, 0.0, 1.0])
             
             try:
-                p_cam = np.array(dato["dron"]["pos"], dtype=float)
-                quat_dron = np.array(dato["dron"]["quat"], dtype=float)
-                p_rebote_local = np.array(dato["rebote_local"], dtype=float)
+                p_cam = np.array(data["drone"]["pos"], dtype=float)
+                drone_quat = np.array(data["drone"]["quat"], dtype=float)
+                p_bounce_local = np.array(data["bounce_local"], dtype=float)
                 
-                if np.any(np.isnan(p_cam)) or np.any(np.isnan(quat_dron)) or np.any(np.isnan(p_rebote_local)):
+                if np.any(np.isnan(p_cam)) or np.any(np.isnan(drone_quat)) or np.any(np.isnan(p_bounce_local)):
                     continue
                     
-                if np.linalg.norm(quat_dron) < 1e-6:
+                if np.linalg.norm(drone_quat) < 1e-6:
                     continue
 
-                r_dron = R.from_quat(quat_dron)
+                drone_r = R.from_quat(drone_quat)
                 
             except (KeyError, ValueError, TypeError):
                 continue
             
-            r_iter = r_teo_original
-            n_meas_global = np.array([0.0, 0.0, 0.0])
+            r_iter = original_theo_r
+            global_meas_n = np.array([0.0, 0.0, 0.0])
             
-            # Newton-Raphson / Producto Cruzado para buscar la orientación real
+            # Newton-Raphson / Cross Product to find the real orientation
             for _ in range(3):
-                p_reflex_global = p_teo + r_iter.apply(p_rebote_local)
-                n_meas_global = self.calcular_vector_medido(p_cam, r_dron, p_reflex_global)
-                n_curr_global = r_iter.apply([0.0, 0.0, 1.0])
+                global_reflex_p = p_theo + r_iter.apply(p_bounce_local)
+                global_meas_n = self.calculate_measured_vector(p_cam, drone_r, global_reflex_p)
+                global_curr_n = r_iter.apply([0.0, 0.0, 1.0])
                 
-                cross_prod = np.cross(n_curr_global, n_meas_global)
+                cross_prod = np.cross(global_curr_n, global_meas_n)
                 norm_cross = np.linalg.norm(cross_prod)
                 
                 if norm_cross > 1e-8:
                     axis = cross_prod / norm_cross
-                    dot_prod = np.dot(n_curr_global, n_meas_global)
+                    dot_prod = np.dot(global_curr_n, global_meas_n)
                     dot_prod = max(-1.0, min(1.0, dot_prod))
                     angle = math.acos(dot_prod)
                     r_corr = R.from_rotvec(axis * angle)
                     r_iter = r_corr * r_iter 
             
-            n_final_global = r_iter.apply([0.0, 0.0, 1.0])
+            global_final_n = r_iter.apply([0.0, 0.0, 1.0])
             
-            # Deshacemos la rotación global para ver el error en el sistema local del espejo
-            n_final_ccs = r_teo_original.inv().apply(n_final_global)
+            # We undo the global rotation to see the error in the mirror's local system
+            ccs_final_n = original_theo_r.inv().apply(global_final_n)
             
-            # Extraemos el error. 
-            # Error Rotación X (Roll) y Error Rotación Y (Pitch)
-            error_rotX_rad = -math.atan2(n_final_ccs[1], n_final_ccs[2])
-            error_rotY_rad = math.atan2(n_final_ccs[0], n_final_ccs[2])
+            # We extract the error. 
+            # X Rotation Error (Roll) and Y Rotation Error (Pitch)
+            error_rotX_rad = -math.atan2(ccs_final_n[1], ccs_final_n[2])
+            error_rotY_rad = math.atan2(ccs_final_n[0], ccs_final_n[2])
             
             rotX_mrad = error_rotX_rad * 1000.0
             rotY_mrad = error_rotY_rad * 1000.0
             
-            MAX_MUESTRAS = 50  
+            MAX_SAMPLES = 50  
             
-            if id_panel not in self.historial_errores:
-                self.historial_errores[id_panel] = {"rotX": [], "rotY": []}
+            if collector_id not in self.error_history:
+                self.error_history[collector_id] = {"rotX": [], "rotY": []}
                 
-            self.historial_errores[id_panel]["rotX"].append(rotX_mrad)
-            self.historial_errores[id_panel]["rotY"].append(rotY_mrad)
+            self.error_history[collector_id]["rotX"].append(rotX_mrad)
+            self.error_history[collector_id]["rotY"].append(rotY_mrad)
             
-            if len(self.historial_errores[id_panel]["rotX"]) > MAX_MUESTRAS:
-                self.historial_errores[id_panel]["rotX"].pop(0)
-                self.historial_errores[id_panel]["rotY"].pop(0)
+            if len(self.error_history[collector_id]["rotX"]) > MAX_SAMPLES:
+                self.error_history[collector_id]["rotX"].pop(0)
+                self.error_history[collector_id]["rotY"].pop(0)
                 
-            media_rotX = float(np.mean(self.historial_errores[id_panel]["rotX"]))
-            media_rotY = float(np.mean(self.historial_errores[id_panel]["rotY"]))
-            muestras = len(self.historial_errores[id_panel]["rotX"])
+            mean_rotX = float(np.mean(self.error_history[collector_id]["rotX"]))
+            mean_rotY = float(np.mean(self.error_history[collector_id]["rotY"]))
+            samples = len(self.error_history[collector_id]["rotX"])
             
-            resultados_iteracion.append({
-                "id": id_panel, 
-                "muestras_tomadas": muestras,
-                "error_actual_rotX_mrad": float(rotX_mrad),
-                "error_actual_rotY_mrad": float(rotY_mrad),
-                "error_x_mrad": media_rotX, 
-                "error_y_mrad": media_rotY,
-                "normal_teorica": n_teo_global.tolist(),
-                "normal_medida": n_meas_global.tolist(),
-                "rebote_local": p_rebote_local.tolist()
+            iteration_results.append({
+                "id": collector_id, 
+                "samples_taken": samples,
+                "current_error_rotX_mrad": float(rotX_mrad),
+                "current_error_rotY_mrad": float(rotY_mrad),
+                "error_x_mrad": mean_rotX, 
+                "error_y_mrad": mean_rotY,
+                "theoretical_normal": global_theo_n.tolist(),
+                "measured_normal": global_meas_n.tolist(),
+                "bounce_local": p_bounce_local.tolist()
             })
 
-        if resultados_iteracion:
-            msg_pub = String(data=json.dumps(resultados_iteracion))
-            self.pub_resultados.publish(msg_pub)
+        if iteration_results:
+            msg_pub = String(data=json.dumps(iteration_results))
+            self.pub_results.publish(msg_pub)
 
 def main(args=None):
     rclpy.init(args=args)
-    nodo = CalibrationNode()
+    node = CalibrationNode()
     try: 
-        rclpy.spin(nodo)
+        rclpy.spin(node)
     except KeyboardInterrupt: 
         pass
     finally:
-        nodo.destroy_node()
+        node.destroy_node()
         if rclpy.ok():
             rclpy.shutdown()
 

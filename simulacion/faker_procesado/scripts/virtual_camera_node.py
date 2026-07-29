@@ -23,126 +23,126 @@ class VirtualCameraNode(Node):
         self.focal_dist = 1.5
         self.sensor_w, self.sensor_h = 1.6, 1.2
         
-        self.limite_coseno_fov = np.cos(np.radians(160.0 / 2.0))
-        self.distancia_dibujo = 150.0
+        self.fov_cosine_limit = np.cos(np.radians(160.0 / 2.0))
+        self.draw_distance = 150.0
         
-        self.dron_pose = None
+        self.drone_pose = None
         self.cam_pose = None
-        self.impactos_recientes = []
+        self.recent_impacts = []
         
-        self.paneles_memoria = []
-        self.coords_paneles = []
-        self.arbol_kd = None
+        self.memory_collectors = []
+        self.collector_coords = []
+        self.kd_tree = None
 
-        self.cli_realidad = self.create_client(Trigger, 'get_panel_real')
+        self.cli_real = self.create_client(Trigger, 'get_collector_real')
 
-        self.pub_imagen = self.create_publisher(Image, '/virtual_camera/image', 10)
-        self.create_subscription(String, '/sim_status/panel_updates', self.actualizar_paneles_callback, 10)
-        self.create_subscription(PoseStamped, '/data/drone', self.dron_callback, qos_profile_sensor_data)
-        self.create_subscription(PoseStamped, '/data/camera', self.camara_callback, qos_profile_sensor_data)
+        self.pub_image = self.create_publisher(Image, '/virtual_camera/image', 10)
+        self.create_subscription(String, '/sim_status/collector_updates', self.update_collectors_callback, 10)
+        self.create_subscription(PoseStamped, '/data/drone', self.drone_callback, qos_profile_sensor_data)
+        self.create_subscription(PoseStamped, '/data/camera', self.camera_callback, qos_profile_sensor_data)
         self.create_subscription(String, '/inspection/raw_data', self.raw_data_callback, qos_profile_sensor_data)
         
         self.create_timer(0.05, self.render_loop)
-        self.pedir_mapa_inicial()
-        self.get_logger().info("Cámara Virtual [KD-Tree + RAM Pura] activa.")
+        self.request_initial_map()
+        self.get_logger().info("Virtual Camera [KD-Tree + Pure RAM] active.")
 
-    def pedir_mapa_inicial(self):
-        if not self.cli_realidad.service_is_ready(): return
+    def request_initial_map(self):
+        if not self.cli_real.service_is_ready(): return
         req = Trigger.Request()
-        self.cli_realidad.call_async(req).add_done_callback(self.al_recibir_mapa_srv)
+        self.cli_real.call_async(req).add_done_callback(self.on_map_received_srv)
 
-    def al_recibir_mapa_srv(self, futuro):
+    def on_map_received_srv(self, future):
         try:
-            res = futuro.result()
-            self.paneles_memoria = json.loads(res.message)
-            self.coords_paneles = [[p['x'], p['y'], p['z']] for p in self.paneles_memoria]
-            if self.coords_paneles:
-                self.arbol_kd = KDTree(self.coords_paneles)
-        except Exception as e: self.get_logger().error(f"Error mapa: {e}")
+            res = future.result()
+            self.memory_collectors = json.loads(res.message)
+            self.collector_coords = [[c['x'], c['y'], c['z']] for c in self.memory_collectors]
+            if self.collector_coords:
+                self.kd_tree = KDTree(self.collector_coords)
+        except Exception as e: self.get_logger().error(f"Map error: {e}")
 
-    def actualizar_paneles_callback(self, msg):
-        self.pedir_mapa_inicial()
+    def update_collectors_callback(self, msg):
+        self.request_initial_map()
 
-    def dron_callback(self, msg): self.dron_pose = msg
-    def camara_callback(self, msg): self.cam_pose = msg
+    def drone_callback(self, msg): self.drone_pose = msg
+    def camera_callback(self, msg): self.cam_pose = msg
     def raw_data_callback(self, msg):
-        try: self.impactos_recientes = json.loads(msg.data)
-        except: self.impactos_recientes = []
+        try: self.recent_impacts = json.loads(msg.data)
+        except: self.recent_impacts = []
 
     def render_loop(self):
         img = np.zeros((self.res_h, self.res_w, 3), dtype=np.uint8)
-        if not self.cam_pose or not self.arbol_kd:
-            self.pub_imagen.publish(self.br.cv2_to_imgmsg(img, encoding="bgr8"))
+        if not self.cam_pose or not self.kd_tree:
+            self.pub_image.publish(self.br.cv2_to_imgmsg(img, encoding="bgr8"))
             return
 
         p_cam = np.array([self.cam_pose.pose.position.x, self.cam_pose.pose.position.y, self.cam_pose.pose.position.z])
         q_cam = self.cam_pose.pose.orientation
         r_cam_inv = R.from_quat([q_cam.x, q_cam.y, q_cam.z, q_cam.w]).inv()
-        eje_optico = R.from_quat([q_cam.x, q_cam.y, q_cam.z, q_cam.w]).apply([1, 0, 0])
+        optical_axis = R.from_quat([q_cam.x, q_cam.y, q_cam.z, q_cam.w]).apply([1, 0, 0])
 
-        indices_cercanos = self.arbol_kd.query_ball_point(p_cam, r=self.distancia_dibujo)
+        nearby_indices = self.kd_tree.query_ball_point(p_cam, r=self.draw_distance)
 
-        for idx in indices_cercanos:
-            p = self.paneles_memoria[idx] 
-            pos_p_global = np.array([p['x'], p['y'], p['z']])
+        for idx in nearby_indices:
+            c = self.memory_collectors[idx] 
+            global_c_pos = np.array([c['x'], c['y'], c['z']])
             
-            vec_dir = pos_p_global - p_cam
-            dist = np.linalg.norm(vec_dir)
+            dir_vec = global_c_pos - p_cam
+            dist = np.linalg.norm(dir_vec)
             if dist < 1e-3: continue
-            if np.dot(eje_optico, vec_dir/dist) < self.limite_coseno_fov: continue 
+            if np.dot(optical_axis, dir_vec/dist) < self.fov_cosine_limit: continue 
 
-            # TU CINEMÁTICA ORIGINAL (Síncrona)
-            rot_yaw = R.from_euler('z', p.get('yaw', 0.0))
-            rot_pitch = R.from_euler('y', p.get('pitch', 0.0))
-            r_p_global = rot_yaw * rot_pitch
+            # YOUR ORIGINAL KINEMATICS (Synchronous)
+            rot_yaw = R.from_euler('z', c.get('yaw', 0.0))
+            rot_pitch = R.from_euler('y', c.get('pitch', 0.0))
+            global_c_r = rot_yaw * rot_pitch
 
-            objetivos_dibujo = []
-            if 'facetas' in p:
-                w_f, l_f = p.get('width_x', 10.4) / 5.0, p.get('length_y', 11.4) / 5.0
-                for f in p['facetas']:
-                    offset_local = np.array(f.get('offset', [0.0, 0.0, 0.0]))
-                    pos_f_global = pos_p_global + r_p_global.apply(offset_local)
+            draw_targets = []
+            if 'facets' in c:
+                w_f, l_f = c.get('width_x', 10.4) / 5.0, c.get('length_y', 11.4) / 5.0
+                for f in c['facets']:
+                    local_offset = np.array(f.get('offset', [0.0, 0.0, 0.0]))
+                    global_f_pos = global_c_pos + global_c_r.apply(local_offset)
                     
-                    rot_canting = R.from_euler('xy', [f.get('cant_roll', 0.0), f.get('cant_pitch', 0.0)])
-                    r_f_final = r_p_global * rot_canting
+                    canting_rot = R.from_euler('xy', [f.get('cant_roll', 0.0), f.get('cant_pitch', 0.0)])
+                    final_f_r = global_c_r * canting_rot
                     
-                    objetivos_dibujo.append({'pos': pos_f_global, 'rot_mat': r_f_final, 'w': w_f, 'l': l_f})
+                    draw_targets.append({'pos': global_f_pos, 'rot_mat': final_f_r, 'w': w_f, 'l': l_f})
             else:
-                objetivos_dibujo.append({'pos': pos_p_global, 'rot_mat': r_p_global, 'w': p.get('width_x', 10.4), 'l': p.get('length_y', 11.4)})
+                draw_targets.append({'pos': global_c_pos, 'rot_mat': global_c_r, 'w': c.get('width_x', 10.4), 'l': c.get('length_y', 11.4)})
 
-            for obj in objetivos_dibujo:
+            for obj in draw_targets:
                 hw, hl = obj['w']/2, obj['l']/2
-                esquinas_locales = np.array([[hw, hl, 0], [-hw, hl, 0], [-hw, -hl, 0], [hw, -hl, 0]])
-                esquinas_mundo = obj['rot_mat'].apply(esquinas_locales) + obj['pos']
-                esquinas_cam = r_cam_inv.apply(esquinas_mundo - p_cam)
+                local_corners = np.array([[hw, hl, 0], [-hw, hl, 0], [-hw, -hl, 0], [hw, -hl, 0]])
+                world_corners = obj['rot_mat'].apply(local_corners) + obj['pos']
+                cam_corners = r_cam_inv.apply(world_corners - p_cam)
                 
-                # Proyección vectorizada Anti-Parpadeo
-                if np.all(esquinas_cam[:, 0] > 0.1):
-                    u = (((-self.focal_dist * (esquinas_cam[:, 1] / esquinas_cam[:, 0])) / self.sensor_w) + 0.5) * self.res_w
-                    v = (((-self.focal_dist * (esquinas_cam[:, 2] / esquinas_cam[:, 0])) / self.sensor_h) + 0.5) * self.res_h
+                # Vectorized Anti-Flicker Projection
+                if np.all(cam_corners[:, 0] > 0.1):
+                    u = (((-self.focal_dist * (cam_corners[:, 1] / cam_corners[:, 0])) / self.sensor_w) + 0.5) * self.res_w
+                    v = (((-self.focal_dist * (cam_corners[:, 2] / cam_corners[:, 0])) / self.sensor_h) + 0.5) * self.res_h
                     
                     pts = np.vstack((u, v)).T.astype(np.int32)
                     cv2.polylines(img, [pts], isClosed=True, color=(0, 255, 0), thickness=2)
 
-        if self.impactos_recientes:
-            pts_mundo = np.array([imp.get('rebote_world_debug', [0,0,0]) for imp in self.impactos_recientes])
-            pts_cam = r_cam_inv.apply(pts_mundo - p_cam)
-            frente_mask = pts_cam[:, 0] > 0.1
-            if np.any(frente_mask):
-                valid_p = pts_cam[frente_mask]
+        if self.recent_impacts:
+            world_pts = np.array([imp.get('bounce_world_debug', [0,0,0]) for imp in self.recent_impacts])
+            cam_pts = r_cam_inv.apply(world_pts - p_cam)
+            front_mask = cam_pts[:, 0] > 0.1
+            if np.any(front_mask):
+                valid_p = cam_pts[front_mask]
                 u = (((-self.focal_dist * (valid_p[:, 1] / valid_p[:, 0])) / self.sensor_w) + 0.5) * self.res_w
                 v = (((-self.focal_dist * (valid_p[:, 2] / valid_p[:, 0])) / self.sensor_h) + 0.5) * self.res_h
-                dentro_mask = (u >= 0) & (u < self.res_w) & (v >= 0) & (v < self.res_h)
-                for ui, vi in zip(u[dentro_mask], v[dentro_mask]):
+                inside_mask = (u >= 0) & (u < self.res_w) & (v >= 0) & (v < self.res_h)
+                for ui, vi in zip(u[inside_mask], v[inside_mask]):
                     cv2.circle(img, (int(ui), int(vi)), 8, (0, 255, 255), -1)
 
-        self.pub_imagen.publish(self.br.cv2_to_imgmsg(img, encoding="bgr8"))
+        self.pub_image.publish(self.br.cv2_to_imgmsg(img, encoding="bgr8"))
 
 def main(args=None):
     rclpy.init(args=args)
-    nodo = VirtualCameraNode()
-    try: rclpy.spin(nodo)
+    node = VirtualCameraNode()
+    try: rclpy.spin(node)
     except KeyboardInterrupt: pass
-    finally: nodo.destroy_node(); rclpy.shutdown()
+    finally: node.destroy_node(); rclpy.shutdown()
 
 if __name__ == "__main__": main()
