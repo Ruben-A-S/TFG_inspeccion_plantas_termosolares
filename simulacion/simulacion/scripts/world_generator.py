@@ -8,13 +8,17 @@ import argparse
 import os
 
 
-def create_base_world(world_name: str, texture_path: str, output_path: str) -> None:
+def create_base_world(world_name: str, texture_path: str, output_path: str, 
+                      lat: float, lon: float, elevation: float) -> None:
     """
     Generates a Gazebo .sdf file with basic configuration and a ground texture.
     
     :param world_name: Internal name of the world in Gazebo.
     :param texture_path: Path to the image (jpg/png) that will be used as albedo_map.
     :param output_path: Full path where the .sdf file will be saved.
+    :param lat: Latitude for the spherical coordinates.
+    :param lon: Longitude for the spherical coordinates.
+    :param elevation: Elevation (Altitude) over sea level.
     """
     # We verify if the texture exists to warn the user
     if not os.path.exists(texture_path):
@@ -121,9 +125,9 @@ def create_base_world(world_name: str, texture_path: str, output_path: str) -> N
     <spherical_coordinates>
       <surface_model>EARTH_WGS84</surface_model>
       <world_frame_orientation>ENU</world_frame_orientation>
-      <latitude_deg>47.397971057728974</latitude_deg>
-      <longitude_deg> 8.546163739800146</longitude_deg>
-      <elevation>0</elevation>
+      <latitude_deg>{lat}</latitude_deg>
+      <longitude_deg>{lon}</longitude_deg>
+      <elevation>{elevation}</elevation>
     </spherical_coordinates>
   </world>
 </sdf>
@@ -142,31 +146,16 @@ def create_base_world(world_name: str, texture_path: str, output_path: str) -> N
 
 
 if __name__ == "__main__":
-    # Terminal argument configuration
     parser = argparse.ArgumentParser(description="Base world generator for Gazebo")
     
-    parser.add_argument(
-        "--name", 
-        type=str, 
-        required=True, 
-        help="Name of the world (e.g. sevilla_plant)"
-    )
+    parser.add_argument("--name", type=str, required=True, help="Name of the world")
+    parser.add_argument("--texture", type=str, required=True, help="Path to the texture")
+    parser.add_argument("--output", type=str, required=True, help="Path to the output .sdf")
     
-    parser.add_argument(
-        "--texture", 
-        type=str, 
-        required=True, 
-        help="Path to the jpg/png image for the ground"
-    )
-                    
-    parser.add_argument(
-        "--output", 
-        type=str, 
-        required=True, 
-        help="Path and name of the .sdf file to generate"
-    )
+    # Nuevos argumentos para ejecución por terminal
+    parser.add_argument("--lat", type=float, default=37.0934, help="Latitude")
+    parser.add_argument("--lon", type=float, default=-6.7337, help="Longitude")
+    parser.add_argument("--elevation", type=float, default=349.0, help="Elevation")
     
     args = parser.parse_args()
-    
-    # Execute the main function
-    create_base_world(args.name, args.texture, args.output)
+    create_base_world(args.name, args.texture, args.output, args.lat, args.lon, args.elevation)

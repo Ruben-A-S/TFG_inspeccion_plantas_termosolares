@@ -22,16 +22,60 @@ class SimOrchestratorNode(Node):
 
     def __init__(self):
         super().__init__('sim_orchestrator_node')
+        
+        self.declare_parameter('ui_defaults.date', '10/02/2001')
+        self.declare_parameter('ui_defaults.time', '12:34')
+        self.declare_parameter('ui_defaults.world_name', 'test1')
+        self.declare_parameter('ui_defaults.texture_name', 'none')
+        self.declare_parameter('ui_defaults.csv_path', 'Crescent_Dunes.csv')
+        self.declare_parameter('ui_defaults.collector_model', 'collector')
+        self.declare_parameter('ui_defaults.drone_model', 'x500')
+        self.declare_parameter('ui_defaults.drone_spawn', [0.0, 0.0, 0.5])
+        self.declare_parameter('ui_defaults.camera_pitch_deg', 45.0)
+        self.declare_parameter('ui_defaults.target_collector', 'collector_0')
+        
+        self.declare_parameter('system_paths.base_dir', '~/Carpeta_TFG_Provisional/src/TFG_inspeccion_plantas_termosolares')
+        self.declare_parameter('system_paths.px4_dir', '~/PX4-Autopilot')
+        
+        self.declare_parameter('environment.latitude', 37.0934)
+        self.declare_parameter('environment.longitude', -6.7337)
+        self.declare_parameter('environment.elevation', 349.0)
+        
+        self.declare_parameter('camera.focal_distance', 1.5)
+        self.declare_parameter('camera.distortion', 0.0)
+        
+        
+        self.def_date = self.get_parameter('ui_defaults.date').value
+        self.def_time = self.get_parameter('ui_defaults.time').value
+        self.def_world = self.get_parameter('ui_defaults.world_name').value
+        self.def_texture = self.get_parameter('ui_defaults.texture_name').value
+        self.def_csv = self.get_parameter('ui_defaults.csv_path').value
+        self.def_col_model = self.get_parameter('ui_defaults.collector_model').value
+        self.def_drone = self.get_parameter('ui_defaults.drone_model').value
+        self.def_spawn = self.get_parameter('ui_defaults.drone_spawn').value
+        self.def_pitch = self.get_parameter('ui_defaults.camera_pitch_deg').value
+        self.def_target_col = self.get_parameter('ui_defaults.target_collector').value
 
-        # --- INTERNAL STATE ---
-        self.config_date = {"date": "10/02/2001", "time": "12:34"}
-        self.config_world = {"name": "test1", "texture": "arenosillo.png"}
-        self.config_collectors = {"model": "collector", "csv_path": "Crescent_Dunes.csv"}
-        self.config_drone = {"model": "x500", "x": 0.0, "y": 0.0}
+        self.base_dir = os.path.expanduser(self.get_parameter('system_paths.base_dir').value)
+        self.px4_dir = os.path.expanduser(self.get_parameter('system_paths.px4_dir').value)
+        
+        self.env_lat = self.get_parameter('environment.latitude').value
+        self.env_lon = self.get_parameter('environment.longitude').value
+        self.env_alt = self.get_parameter('environment.elevation').value
+        
+        self.cam_focal = self.get_parameter('camera.focal_distance').value
+        self.cam_distortion = self.get_parameter('camera.distortion').value
+
+        # --- 3. INICIALIZAR ESTADO CON LOS VALORES POR DEFECTO DEL YAML ---
+        self.config_date = {"date": self.def_date, "time": self.def_time}
+        self.config_world = {"name": self.def_world, "texture": self.def_texture}
+        self.config_collectors = {"model": self.def_col_model, "csv_path": self.def_csv}
+        self.config_drone = {"model": self.def_drone, "x": self.def_spawn[0], "y": self.def_spawn[1]}
+        
         self.simulation_process = None 
-
-        self.generated_world = {"name": "test1"}
-        self.generated_collectors = {"csv_path": "mapa_3.txt"}
+        self.generated_world = {"name": self.def_world}
+        self.generated_collectors = {"csv_path": self.def_csv}
+        
         
         # --- PUBLISHERS ---
         self.pub_map_management = self.create_publisher(String, '/sim_cmd/map_management', 10)
@@ -111,7 +155,7 @@ class SimOrchestratorNode(Node):
         """Updates the drone camera pitch."""
         try:
             data = json.loads(msg.data)
-            degrees = data.get("angle", 45.0)
+            degrees = data.get("angle", self.def_pitch)
             
             # Convert to radians here so the calculator receives the ready-to-use data
             radians = degrees * (3.14159265 / 180.0)
@@ -119,7 +163,7 @@ class SimOrchestratorNode(Node):
             # Prepare the message for the calculator (Float64MultiArray)
             msg_control = Float64MultiArray()
             # [Angle, Focal (default 1.5), Distortion (0.0)]
-            msg_control.data = [float(radians), 1.5, 0.0]        
+            msg_control.data = [float(radians), self.cam_focal, self.cam_distortion]        
             self.pub_control_params.publish(msg_control)
             
             self.send_log(f"Camera moved to {degrees} degrees ({radians:.3f} rad)")
@@ -131,7 +175,7 @@ class SimOrchestratorNode(Node):
         """Listens to the rotate collector command to register it in the global log."""
         try:
             data = json.loads(msg.data)
-            c_id = data.get("collector_id", "collector_0") 
+            c_id = data.get("collector_id", self.def_target_col) 
             
             # Read the facet so the log is exact
             f_id = data.get("facet_id", "all") 
@@ -200,30 +244,36 @@ class SimOrchestratorNode(Node):
         self.change_state("STARTING_SIMULATION")
         self.send_log("Phase 1: Preparing virtual world...")
         
-        world_name = self.config_world.get('name', 'test1')
-        texture_name = self.config_world.get('texture', 'arenosillo.png')
+        world_name = self.config_world.get('name', self.def_world)
+        texture_name = self.config_world.get('texture', self.def_texture)
         
         # Hardcoded paths (could be extracted to ROS 2 parameters in the future)
-        base_dir = os.path.expanduser("~/Carpeta_TFG_Provisional/src/TFG_inspeccion_plantas_termosolares")
-        original_world_path = os.path.join(base_dir, "simulacion/simulacion/worlds", f"{world_name}.sdf")
-        texture_path = os.path.join(base_dir, "simulacion/simulacion/models/textures", texture_name)
+        original_world_path = os.path.join(self.base_dir, "simulacion/simulacion/worlds", f"{world_name}.sdf")
+        texture_path = os.path.join(self.base_dir, "simulacion/simulacion/models/textures", texture_name)
         
         try:
-            create_base_world(world_name, texture_path, original_world_path)
+            create_base_world(
+                world_name, 
+                texture_path, 
+                original_world_path, 
+                self.env_lat, 
+                self.env_lon, 
+                self.env_alt
+            )
             self.send_log(f"World '{world_name}' generated successfully.")
         except Exception as e:
             self.send_log(f"ERROR generating the world: {e}")
-            return 
+            return
             
         self.send_log("Phase 2: Preparing paths for PX4...")
         
-        drone_model = self.config_drone.get('model', 'x500')
-        pos_x = self.config_drone.get('x', 0.0)
-        pos_y = self.config_drone.get('y', 0.0)
+        drone_model = self.config_drone.get('model', self.def_drone)
+        pos_x = self.config_drone.get('x', self.def_spawn[0])
+        pos_y = self.config_drone.get('y', self.def_spawn[1])
 
-        px4_worlds_path = os.path.expanduser("~/PX4-Autopilot/Tools/simulation/gz/worlds")
+        px4_worlds_path = os.path.join(self.px4_dir, "Tools/simulation/gz/worlds")
         destination_world_path = os.path.join(px4_worlds_path, f"{world_name}.sdf")
-
+        
         if os.path.exists(original_world_path):
             self.send_log("Copying world to PX4 environment...")
             subprocess.run(f"cp {original_world_path} {destination_world_path}", shell=True)
@@ -231,9 +281,12 @@ class SimOrchestratorNode(Node):
             self.send_log(f"WARNING: File {original_world_path} was not found.")
 
         command = (
+            f"export PX4_HOME_LAT={self.env_lat} && "
+            f"export PX4_HOME_LON={self.env_lon} && "
+            f"export PX4_HOME_ALT={self.env_alt} && "
             f"export PX4_GZ_WORLD={world_name} && "
-            f"export PX4_GZ_MODEL_POSE='{pos_x},{pos_y},0.5,0,0,0' && "
-            f"cd ~/PX4-Autopilot && make px4_sitl gz_{drone_model}"
+            f"export PX4_GZ_MODEL_POSE='{pos_x},{pos_y},{self.def_spawn[2]},0,0,0' && "
+            f"cd {self.px4_dir} && make px4_sitl gz_{drone_model}"
         )
         
         self.send_log("Phase 3: Launching simulation...")
@@ -267,11 +320,11 @@ class SimOrchestratorNode(Node):
     
     def inject_collectors(self):
         """Asks the map loading node to insert the solar collectors."""
-        world_date = self.config_date.get('date', '10/02/2001')
-        world_time = self.config_date.get('time', '12:34')
-        csv_name = self.config_collectors.get('csv_path', 'mapa_3.txt')
-        collector_model = self.config_collectors.get('model', 'collector')
-        world_name = self.generated_world.get('name', 'test1')
+        world_date = self.config_date.get('date', self.def_date)
+        world_time = self.config_date.get('time', self.def_time)
+        csv_name = self.config_collectors.get('csv_path', self.def_csv)
+        collector_model = self.config_collectors.get('model', self.def_col_model)
+        world_name = self.generated_world.get('name', self.def_world)
         
         # 1. Update internal state
         self.generated_collectors = {"csv_path": csv_name}
@@ -295,8 +348,8 @@ class SimOrchestratorNode(Node):
         
     def remove_collectors(self):
         """Asks the map loading node to remove the solar collectors."""
-        csv_name = self.generated_collectors.get('csv_path', 'mapa_3.txt')
-        world_name = self.generated_world.get('name', 'test1')
+        csv_name = self.generated_collectors.get('csv_path', self.def_csv)
+        world_name = self.generated_world.get('name', self.def_world)
 
         command = {
             "action": "EMPTY",

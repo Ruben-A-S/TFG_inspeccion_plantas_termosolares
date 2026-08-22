@@ -1,0 +1,89 @@
+/**:
+  ros__parameters:
+    # ==========================================
+    # 1. VALORES POR DEFECTO DE LA INTERFAZ (UI)
+    # ==========================================
+    # Estos valores rellenarán los "huecos" por defecto en el panel de control 
+    # de la terminal, ahorrando tiempo al lanzar la simulación.
+    ui_defaults:
+      world_name: "test1"               # Nombre del mundo Gazebo a generar
+      texture_name: "none"              # Textura del suelo (ej. arenosillo.png)
+      date: "10/02/2001"                # Fecha para el cálculo solar teórico
+      time: "12:34"                     # Hora para el cálculo solar teórico
+      csv_path: "Crescent_Dunes.csv"    # Archivo con la distribución de la planta
+      collector_model: "collector"      # Nombre del modelo 3D del colector
+      drone_model: "x500"               # Modelo del dron de PX4 a simular
+      drone_spawn: [0.0, 0.0, 0.5]      # Coordenadas de inicio del dron [X, Y, Z]
+      camera_pitch_deg: 45.0            # Ángulo de inclinación inicial de la cámara
+      target_collector: "collector_0"   # Colector objetivo por defecto para comandos
+
+    # ==========================================
+    # 2. RUTAS DEL SISTEMA Y ARCHIVOS
+    # ==========================================
+    # Permite migrar el proyecto a otro PC sin tener que modificar el código fuente.
+    system_paths:
+      base_dir: "~/Carpeta_TFG_Provisional/src/TFG_inspeccion_plantas_termosolares"
+      px4_dir: "~/PX4-Autopilot"
+      history_csv_output: "collector_inspection_history.csv" # Archivo donde se guardan los errores
+
+    # ==========================================
+    # 3. GEOMETRÍA DEL ENTORNO Y COLECTORES
+    # ==========================================
+    environment:
+      sun_vector: [1000.0, 100.0, 500.0] # Vector de dirección del sol (iluminación)
+      latitude: 38.0945                  # Latitud para inyectar en PX4 y Gazebo (Ej. Bailén)
+      longitude: -3.7749                 # Longitud para inyectar en PX4 y Gazebo
+      elevation: 349.0                   # Altitud sobre el nivel del mar en metros
+      gazebo_timeout_ms: 3000            # Tiempo límite (ms) al spawnear modelos antes de dar error
+      
+    collector:
+      advanced_mode: true                # Activa la generación de espejos por facetas (True) o bloques (False)
+      pedestal_z_offset: 5.0             # Altura del poste base del colector (en metros)
+      default_width: 10.4                # Anchura total del colector por defecto
+      default_length: 11.4               # Longitud total del colector por defecto
+      facet_rows: 5                      # Subdivisiones verticales del espejo (Filas)
+      facet_cols: 5                      # Subdivisiones horizontales del espejo (Columnas)
+
+    # ==========================================
+    # 4. CÁMARA VIRTUAL Y ÓPTICA (Faker)
+    # ==========================================
+    # Define las propiedades físicas de la cámara del dron simulado.
+    camera:
+      resolution: [640, 480]             # Resolución de salida de la cámara [Ancho, Alto]
+      sensor_size: [1.6, 1.2]            # Tamaño físico del sensor óptico
+      focal_distance: 1.5                # Distancia focal de la lente
+      distortion: 0.0                    # Coeficiente de distorsión de la lente
+      optics_fov_degrees: 90.0           # Campo de visión interno para el cálculo de impacto de rayos
+      render_fov_degrees: 160.0          # Campo de visión gran angular para la ventana de renderizado de OpenCV
+      near_clip_dist: 0.1                # Distancia mínima a la que los objetos se dejan de ver
+      max_vision_dist: 500.0             # Límite máximo de distancia (metros) para cálculos ópticos
+      render_draw_dist: 150.0            # Límite de distancia (metros) para dibujar en la Virtual Camera
+      led_offset: [0.0, 0.0, -0.6]       # Posición [X, Y, Z] de la luz LED respecto al centro de la cámara
+
+    # ==========================================
+    # 5. RENDIMIENTO Y FRECUENCIAS (Timers en Hz y Segundos)
+    # ==========================================
+    # Ajusta la carga computacional según la potencia del PC.
+    performance:
+      optics_hz: 20.0                    # Frecuencia de cálculo de rebotes ópticos (optics_calculator_node)
+      render_hz: 20.0                    # Frecuencia de actualización del vídeo (virtual_camera_node)
+      tf_broadcast_hz: 20.0              # Frecuencia de publicación de los árboles TF2 (map_loader_node)
+      rviz_update_hz: 10.0               # Frecuencia de actualización de marcadores 3D dinámicos
+      dashboard_refresh_s: 1.5           # Tiempo (en seg) entre actualizaciones del mapa de calor (Matplotlib)
+      monitor_spam_s: 1.0                # Tiempo (en seg) de bloqueo para no saturar la terminal con prints
+
+    # ==========================================
+    # 6. CALIBRACIÓN Y VISUALIZACIÓN RVIZ
+    # ==========================================
+    calibration:
+      max_samples_average: 50            # Nº de muestras máximas para la media móvil de la corrección del error
+      heatmap_threshold_mrad: 5.0        # Error (en mrad) a partir del cual el color en el dashboard es máximo
+      newton_iterations: 3
+      
+      max_coverage : 100
+
+    visualization:
+      rviz_arrow_length: 3.0             # Longitud de las flechas (Normales) de los espejos en metros
+      rviz_arrow_thickness: 0.1          # Grosor del tronco de las flechas de las normales
+      dynamic_marker_lifetime_s: 0.15    # Tiempo de vida de los puntos de impacto en RViz
+      calibration_arrow_lifetime_s: 2.0  # Tiempo de vida de las flechas de calibración

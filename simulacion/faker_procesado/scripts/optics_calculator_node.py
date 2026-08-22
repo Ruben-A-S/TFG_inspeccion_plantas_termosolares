@@ -17,19 +17,47 @@ class OpticsCalculatorNode(Node):
     def __init__(self, world_name="test1", drone_model="x500"):
         super().__init__('optics_calculator_node')
         
-        self.world_name = world_name
-        self.drone_model = drone_model
+        # --- 1. DECLARAR PARÁMETROS DEL YAML ---
+        self.declare_parameter('ui_defaults.world_name', 'test1')
+        self.declare_parameter('ui_defaults.drone_model', 'x500')
+        self.declare_parameter('ui_defaults.camera_pitch_deg', 45.0)
         
-        self.drone_pos = None
-        self.drone_quat = None
-        self.cam_angle = 0.785   
-        self.max_vision_distance = 500.0 
-        self.new_pose_available = False
+        self.declare_parameter('camera.optics_fov_degrees', 90.0)
+        self.declare_parameter('camera.max_vision_dist', 500.0)
+        self.declare_parameter('camera.led_offset', [0.0, 0.0, -0.6])
+        
+        self.declare_parameter('collector.default_width', 10.4)
+        self.declare_parameter('collector.default_length', 11.4)
+        self.declare_parameter('collector.facet_cols', 5)
+        self.declare_parameter('collector.facet_rows', 5)
+        
+        self.declare_parameter('performance.optics_hz', 20.0)
 
-        self.fov_degrees = 90.0
+        # --- 2. EXTRAER VALORES ---
+        self.world_name = self.get_parameter('ui_defaults.world_name').value
+        self.drone_model = self.get_parameter('ui_defaults.drone_model').value
+        
+        # Transformamos directamente a radianes al leer
+        pitch_deg = self.get_parameter('ui_defaults.camera_pitch_deg').value
+        self.cam_angle = np.radians(pitch_deg)
+        
+        self.fov_degrees = self.get_parameter('camera.optics_fov_degrees').value
         self.fov_cosine_limit = np.cos(np.radians(self.fov_degrees / 2.0))
+        self.max_vision_distance = self.get_parameter('camera.max_vision_dist').value
+        self.led_offset = self.get_parameter('camera.led_offset').value
+        
+        self.def_w = self.get_parameter('collector.default_width').value
+        self.def_l = self.get_parameter('collector.default_length').value
+        self.f_cols = self.get_parameter('collector.facet_cols').value
+        self.f_rows = self.get_parameter('collector.facet_rows').value
+        
+        optics_hz = self.get_parameter('performance.optics_hz').value
 
         # PURE RAM MEMORY: We store the JSON here
+        self.drone_pos = None
+        self.drone_quat = None
+        self.new_pose_available = False
+        
         self.memory_collectors = []
         self.collector_coords = []
         self.collector_sizes = {}
@@ -46,7 +74,8 @@ class OpticsCalculatorNode(Node):
         self.create_subscription(Float64MultiArray, '/control_param', self.param_callback, qos_profile_sensor_data)
         self.create_subscription(String, '/sim_status/collector_updates', self.collector_update_callback, 10)
 
-        self.create_timer(0.05, self.perception_loop_hz)
+        timer_period = 1.0 / optics_hz if optics_hz > 0 else 0.05
+        self.create_timer(timer_period, self.perception_loop_hz)
 
         self.request_full_map()
         self.launch_gazebo_spy()
@@ -71,7 +100,10 @@ class OpticsCalculatorNode(Node):
                 if self.collector_coords:
                     self.kd_tree = KDTree(self.collector_coords)
                 
-                self.collector_sizes = {c['id']: {'w': c.get('width_x', 10.4), 'l': c.get('length_y', 11.4)} for c in self.memory_collectors}
+                self.collector_sizes = {
+                    c['id']: {'w': c.get('width_x', self.def_w), 'l': c.get('length_y', self.def_l)} 
+                    for c in self.memory_collectors
+                }
         except Exception as e:
             self.get_logger().error(f"Error processing metadata: {e}")
 
@@ -101,7 +133,7 @@ class OpticsCalculatorNode(Node):
         msg_cam.pose.orientation.x, msg_cam.pose.orientation.y, msg_cam.pose.orientation.z, msg_cam.pose.orientation.w = rot_cam.as_quat()
         self.pub_camera.publish(msg_cam)
 
-        light_pos = self.drone_pos + rot_cam.apply([0, 0, -0.6])
+        light_pos = self.drone_pos + rot_cam.apply(self.led_offset)
         msg_light = PoseStamped()
         msg_light.header.frame_id, msg_light.header.stamp = "world", stamp
         msg_light.pose.position.x, msg_light.pose.position.y, msg_light.pose.position.z = light_pos
@@ -126,9 +158,9 @@ class OpticsCalculatorNode(Node):
             if angle_cosine < self.fov_cosine_limit:
                 continue 
                 
-            size = self.collector_sizes.get(collector_id, {'w': 10.4, 'l': 11.4})
-            w_f = size['w'] / 5.0
-            l_f = size['l'] / 5.0
+            size = self.collector_sizes.get(collector_id, {'w': self.def_w, 'l': self.def_l})
+            w_f = size['w'] / float(self.f_cols)
+            l_f = size['l'] / float(self.f_rows)
 
             # YOUR ORIGINAL KINEMATICS (Synchronous and robust)
             rot_yaw = R.from_euler('z', c.get('yaw', 0.0))

@@ -37,8 +37,9 @@ class FeedbackMonitorNode(Node):
     def __init__(self):
         super().__init__('feedback_monitor_node')
         
+        self.declare_parameter('performance.monitor_spam_s', 1.0)
+        self.refresh_interval = self.get_parameter('performance.monitor_spam_s').value
         self.last_print = {} 
-        self.refresh_interval = 1.0 
 
         # --- SUBSCRIPTIONS ---
         self.create_subscription(String, '/sim_status/log', self.log_callback, 10)

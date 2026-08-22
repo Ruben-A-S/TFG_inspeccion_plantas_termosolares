@@ -18,6 +18,17 @@ class TerminalInterfaceNode(Node):
     def __init__(self):
         super().__init__('terminal_interface_node')
         
+        self.declare_parameter('ui_defaults.world_name', 'test1')
+        self.declare_parameter('ui_defaults.texture_name', 'none')
+        self.declare_parameter('ui_defaults.date', '10/02/2001')
+        self.declare_parameter('ui_defaults.time', '12:34')
+        self.declare_parameter('ui_defaults.csv_path', 'Crescent_Dunes.csv')
+        self.declare_parameter('ui_defaults.collector_model', 'collector')
+        self.declare_parameter('ui_defaults.drone_model', 'x500')
+        self.declare_parameter('ui_defaults.camera_pitch_deg', 45.0)
+        self.declare_parameter('ui_defaults.target_collector', 'collector_0')
+        self.declare_parameter('ui_defaults.drone_spawn', [0.0, 0.0, 0.5])
+        
         # Publishers
         self.pub_world = self.create_publisher(String, '/sim_cmd/world_config', 10)
         self.pub_date = self.create_publisher(String, '/sim_cmd/date_config', 10)
@@ -49,6 +60,19 @@ def interactive_menu(node):
     and publishes the data through the node.
     """
     time.sleep(0.5)  # Short pause to ensure ROS 2 connects
+    
+    def_world = node.get_parameter('ui_defaults.world_name').value
+    def_tex = node.get_parameter('ui_defaults.texture_name').value
+    def_date = node.get_parameter('ui_defaults.date').value
+    def_time = node.get_parameter('ui_defaults.time').value
+    def_csv = node.get_parameter('ui_defaults.csv_path').value
+    def_col_mod = node.get_parameter('ui_defaults.collector_model').value
+    def_drone = node.get_parameter('ui_defaults.drone_model').value
+    def_pitch = node.get_parameter('ui_defaults.camera_pitch_deg').value
+    def_target = node.get_parameter('ui_defaults.target_collector').value
+    def_spawn = node.get_parameter('ui_defaults.drone_spawn').value
+    def_x = def_spawn[0]
+    def_y = def_spawn[1]
 
     while True:
         print("\n" + "=" * 45)
@@ -73,28 +97,28 @@ def interactive_menu(node):
         option = input(" Choose an option (1-11): ")
 
         if option == '1':
-            name = input("   World name [test1]: ") or "test1"
-            texture = input("   Texture path [none]: ") or "none"
+            name = input(f"   World name [{def_world}]: ") or def_world
+            texture = input(f"   Texture path [{def_tex}]: ") or def_tex
             node.publish_json(node.pub_world, {"name": name, "texture": texture})
             print("   [OK] World data sent to the Orchestrator.")
             
         elif option == '2':
-            date = input("   Date (e.g. 10/02/2001) [10/02/2001]: ") or "10/02/2001"
-            time_str = input("   Time (e.g. 12:34) [12:34]: ") or "12:34"
+            date = input(f"   Date (e.g. 10/02/2001) [{def_date}]: ") or def_date
+            time_str = input(f"   Time (e.g. 12:34) [{def_time}]: ") or def_time
             node.publish_json(node.pub_date, {"date": date, "time": time_str})
             print("   [OK] Date and time data sent to the Orchestrator.")
             
         elif option == '3':
-            csv_path = input("   CSV path [Crescent_Dunes.csv]: ") or "Crescent_Dunes.csv"
-            model = input("   Collector model [collector]: ") or "collector"
+            csv_path = input(f"   CSV path [{def_csv}]: ") or def_csv
+            model = input(f"   Collector model [{def_col_mod}]: ") or def_col_mod
             node.publish_json(node.pub_collectors, {"csv_path": csv_path, "model": model})
             print("   [OK] Collector data sent to the Orchestrator.")
 
         elif option == '4':
-            model = input("   Drone model [x500]: ") or "x500"
+            model = input(f"   Drone model [{def_drone}]: ") or def_drone
             try:
-                x = float(input("   X Coordinate (e.g. 5.0) [0.0]: ") or "0.0")
-                y = float(input("   Y Coordinate (e.g. -2.0) [0.0]: ") or "0.0")
+                x = float(input(f"   X Coordinate (e.g. 5.0) [{def_x}]: ") or str(def_x))
+                y = float(input(f"   Y Coordinate (e.g. -2.0) [{def_y}]: ") or str(def_y))
                 node.publish_json(node.pub_drone, {"model": model, "x": x, "y": y})
                 print("   [OK] Drone data sent to the Orchestrator.")
             except ValueError:
@@ -102,7 +126,7 @@ def interactive_menu(node):
                 
         elif option == '5':
             try:
-                degrees = float(input("   Downward angle (0=Front, 90=Floor) [45]: ") or "45")
+                degrees = float(input(f"   Downward angle (0=Front, 90=Floor) [{def_pitch}]: ") or str(def_pitch))
                 node.publish_json(node.pub_camera, {"angle": degrees})
                 print(f"   [OK] Rotation command to {degrees}° sent.")
             except ValueError:
@@ -110,32 +134,26 @@ def interactive_menu(node):
                 
         elif option == '6':
             try:
-                input_id = input("   Collector or facet ID to rotate [collector_0]: ") or "collector_0"
+                input_id = input(f"   Collector or facet ID to rotate [{def_target}]: ") or def_target
                 
                 if "_f" in input_id:
-                    # If the user types "collector_4_f4_0", we split it by "_f"
                     roll_angle = float(input("   roll increment [0.0]: ") or "0.0")
                     pitch_angle = float(input("   pitch increment [0.0]: ") or "0.0")
-                    # The parent will be "collector_4" and the facet will be the full text
                     collector_id = input_id.split("_f")[0]
                     facet_id = input_id
                     
-                    # We publish the JSON with the two fields separated correctly
                     node.publish_json(node.pub_rotate_collector, {
                         "collector_id": collector_id, 
                         "facet_id": facet_id,
                         "roll_inc": roll_angle, 
                         "pitch_inc": pitch_angle
                     })
-                    
                 else:
-                    # If they type just "collector_4", the whole block rotates
                     yaw_angle = float(input("   yaw increment [0.0]: ") or "0.0")
                     pitch_angle = float(input("   pitch increment [0.0]: ") or "0.0")
                     collector_id = input_id
                     facet_id = "all"
                 
-                    # We publish the JSON with the two fields separated correctly
                     node.publish_json(node.pub_rotate_collector, {
                         "collector_id": collector_id, 
                         "facet_id": facet_id,
@@ -143,7 +161,6 @@ def interactive_menu(node):
                         "pitch_inc": pitch_angle
                     })
                 
-                # Dynamic confirmation message
                 if facet_id == "all":
                     print(f"   [OK] Command sent to full collector {collector_id} for yaw += {yaw_angle}° and pitch += {pitch_angle}º.")
                 else:
@@ -155,24 +172,19 @@ def interactive_menu(node):
         elif option == '7':
             print("\n   >>  Sending FILL command...")
             node.publish_action("FILL")
-            
         elif option == '8':
             print("\n   >>  Sending EMPTY command...")
             node.publish_action("EMPTY")
-            
         elif option == '9':
             print("\n   >>  Sending GENERATE command...")
             node.publish_action("GENERATE")
-
         elif option == '10':
             print("\n   >>  Sending TERMINATE command...")
             node.publish_action("TERMINATE")
-
         elif option == '11':
             print("\n   >>  Shutting down the Orchestrator and exiting...")
             node.publish_action("EXIT")
             break
-            
         else:
             print("   [!] Invalid option. Enter a number between 1 and 11.")
 

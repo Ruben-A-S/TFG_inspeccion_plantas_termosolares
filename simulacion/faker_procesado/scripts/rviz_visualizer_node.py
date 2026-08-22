@@ -9,11 +9,35 @@ from geometry_msgs.msg import Point, PoseStamped
 from visualization_msgs.msg import Marker, MarkerArray
 from std_srvs.srv import Trigger
 from builtin_interfaces.msg import Time, Duration
-from scipy.spatial.transform import Rotation as R # Added for static canting
+from scipy.spatial.transform import Rotation as R 
 
 class RvizVisualizerNode(Node):
     def __init__(self):
         super().__init__('rviz_visualizer_node')
+        
+        # --- 1. DECLARAR PARÁMETROS DEL YAML ---
+        self.declare_parameter('collector.default_width', 10.4)
+        self.declare_parameter('collector.default_length', 11.4)
+        self.declare_parameter('collector.facet_cols', 5)
+        self.declare_parameter('collector.facet_rows', 5)
+        
+        self.declare_parameter('performance.rviz_update_hz', 10.0)
+        self.declare_parameter('visualization.dynamic_marker_lifetime_s', 0.15)
+        
+        # --- 2. EXTRAER VALORES ---
+        self.def_w = self.get_parameter('collector.default_width').value
+        self.def_l = self.get_parameter('collector.default_length').value
+        self.f_cols = self.get_parameter('collector.facet_cols').value
+        self.f_rows = self.get_parameter('collector.facet_rows').value
+        
+        update_hz = self.get_parameter('performance.rviz_update_hz').value
+        lifetime_s = self.get_parameter('visualization.dynamic_marker_lifetime_s').value
+        
+        # Convertir segundos a Time msg de ROS 2 (segundos y nanosegundos)
+        self.marker_lifetime = Duration(
+            sec=int(lifetime_s), 
+            nanosec=int((lifetime_s - int(lifetime_s)) * 1e9)
+        )
         
         self.drone_pose = None
         self.cam_pose = None
@@ -29,7 +53,9 @@ class RvizVisualizerNode(Node):
         self.create_subscription(PoseStamped, '/data/light', self.light_callback, qos_profile_sensor_data)
         self.create_subscription(String, '/inspection/raw_data', self.raw_data_callback, qos_profile_sensor_data)
         
-        self.timer = self.create_timer(0.1, self.publish_dynamic_scene)
+        timer_period = 1.0 / update_hz if update_hz > 0 else 0.1
+        self.timer = self.create_timer(timer_period, self.publish_dynamic_scene)
+        
         self.request_initial_map()
         self.get_logger().info("RViz Visualizer [Dynamic Zero-Math + Base Anchor] Initialized.")
 
@@ -54,8 +80,8 @@ class RvizVisualizerNode(Node):
                 collector_id = c['id']
                 
                 if 'facets' in c:
-                    w_f = c.get('width_x', 10.4) / 5.0
-                    l_f = c.get('length_y', 11.4) / 5.0
+                    w_f = c.get('width_x', self.def_w) / float(self.f_cols)
+                    l_f = c.get('length_y', self.def_l) / float(self.f_rows)
                     for f in c['facets']:
                         m = Marker()
                         # TRICK: We anchor to the global inclination, which IS published in TF2
@@ -99,8 +125,8 @@ class RvizVisualizerNode(Node):
                     m.scale.x = 0.1
                     m.color.r, m.color.g, m.color.b, m.color.a = 0.0, 1.0, 0.0, 1.0
                     
-                    hw = c.get('width_x', 10.4) / 2.0
-                    hl = c.get('length_y', 11.4) / 2.0
+                    hw = c.get('width_x', self.def_w) / 2.0
+                    hl = c.get('length_y', self.def_l) / 2.0
                     m.points = [
                         Point(x=hw, y=hl, z=0.0), Point(x=-hw, y=hl, z=0.0),
                         Point(x=-hw, y=-hl, z=0.0), Point(x=hw, y=-hl, z=0.0),
@@ -128,7 +154,6 @@ class RvizVisualizerNode(Node):
 
         msg_array = MarkerArray()
         now_stamp = self.get_clock().now().to_msg()
-        lifetime_msg = Duration(sec=0, nanosec=150000000)
 
         m_drone = Marker()
         m_drone.header.frame_id, m_drone.header.stamp = "world", now_stamp
@@ -136,7 +161,7 @@ class RvizVisualizerNode(Node):
         m_drone.pose = self.drone_pose.pose
         m_drone.scale.x, m_drone.scale.y, m_drone.scale.z = 2.0, 0.2, 0.2
         m_drone.color.r, m_drone.color.g, m_drone.color.b, m_drone.color.a = 0.0, 0.5, 1.0, 1.0
-        m_drone.lifetime = lifetime_msg
+        m_drone.lifetime = self.marker_lifetime
         msg_array.markers.append(m_drone)
 
         if self.cam_pose:
@@ -146,7 +171,7 @@ class RvizVisualizerNode(Node):
             m_cam.pose = self.cam_pose.pose
             m_cam.scale.x, m_cam.scale.y, m_cam.scale.z = 2.0, 0.2, 0.2
             m_cam.color.r, m_cam.color.g, m_cam.color.b, m_cam.color.a = 1.0, 0.0, 0.0, 1.0
-            m_cam.lifetime = lifetime_msg
+            m_cam.lifetime = self.marker_lifetime
             msg_array.markers.append(m_cam)
 
         if self.light_pose:
@@ -159,7 +184,7 @@ class RvizVisualizerNode(Node):
                     m_imp.pose.position.x, m_imp.pose.position.y, m_imp.pose.position.z = p_bounce_world
                     m_imp.scale.x, m_imp.scale.y, m_imp.scale.z = 0.4, 0.4, 0.4
                     m_imp.color.r, m_imp.color.g, m_imp.color.b, m_imp.color.a = 1.0, 1.0, 0.0, 1.0
-                    m_imp.lifetime = lifetime_msg
+                    m_imp.lifetime = self.marker_lifetime
                     msg_array.markers.append(m_imp)
 
         self.pub_markers.publish(msg_array)

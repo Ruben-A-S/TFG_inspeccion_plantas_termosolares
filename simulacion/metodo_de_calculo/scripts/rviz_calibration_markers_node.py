@@ -3,9 +3,11 @@
 import json
 import rclpy
 from rclpy.node import Node
+from rclpy.qos import qos_profile_sensor_data
 from std_msgs.msg import String
 from std_srvs.srv import Trigger
 from visualization_msgs.msg import Marker, MarkerArray
+from builtin_interfaces.msg import Time, Duration
 from geometry_msgs.msg import Point
 import numpy as np
 from scipy.spatial.transform import Rotation as R
@@ -20,6 +22,22 @@ class RVizCalibrationMarkersNode(Node):
     def __init__(self):
         super().__init__('rviz_calibration_markers_node')
         
+        # --- 1. DECLARAR PARÁMETROS DEL YAML ---
+        self.declare_parameter('visualization.calibration_arrow_lifetime_s', 2.0)
+        self.declare_parameter('visualization.rviz_arrow_length', 3.0)
+        self.declare_parameter('visualization.rviz_arrow_thickness', 0.1)
+        
+        # --- 2. EXTRAER VALORES ---
+        lifetime_s = self.get_parameter('visualization.calibration_arrow_lifetime_s').value
+        self.arrow_length = self.get_parameter('visualization.rviz_arrow_length').value
+        self.arrow_thick = self.get_parameter('visualization.rviz_arrow_thickness').value
+        
+                
+        self.marker_lifetime = Duration(
+            sec=int(lifetime_s), 
+            nanosec=int((lifetime_s - int(lifetime_s)) * 1e9)
+        )
+        
         self.theoretical_collectors = {}
         
         self.cli_theory = self.create_client(Trigger, 'get_collector_theory')
@@ -29,9 +47,6 @@ class RVizCalibrationMarkersNode(Node):
         self.pub_markers = self.create_publisher(MarkerArray, '/calibration/rviz_markers', 10)
         
         self.frame_id = "world"  
-        # NOTE: I reduced the arrow length from 5.0 to 3.0 so that 
-        # on 25-facet collectors it doesn't form a giant blur of colors.
-        self.arrow_length = 3.0  
 
         self.request_theoretical_map()
         self.get_logger().info("RViz Arrow Visualizer started [UNIFIED FACETS MODE]. Waiting for vectors...")
@@ -178,17 +193,16 @@ class RVizCalibrationMarkersNode(Node):
         marker.points = [p_start, p_end]
         
         # Scale: arrow thickness
-        marker.scale.x = 0.10  
-        marker.scale.y = 0.20  
-        marker.scale.z = 0.20  
+        marker.scale.x = self.arrow_thick  
+        marker.scale.y = self.arrow_thick * 2.0  
+        marker.scale.z = self.arrow_thick * 2.0  
         
         marker.color.r = color[0]
         marker.color.g = color[1]
         marker.color.b = color[2]
-        marker.color.a = 0.9 
+        marker.color.r, marker.color.g, marker.color.b, marker.color.a = color[0], color[1], color[2], 0.9
         
-        marker.lifetime.sec = 2
-        marker.lifetime.nanosec = 0
+        marker.lifetime = self.marker_lifetime
         
         return marker
 

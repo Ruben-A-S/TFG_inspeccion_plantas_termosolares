@@ -23,10 +23,22 @@ class CollectorAnalysisLoggerNode(Node):
     def __init__(self):
         super().__init__('collector_analysis_logger_node')
         
-        self.rows = 5
-        self.cols = 5
+        # --- DECLARAR PARÁMETROS ---
+        self.declare_parameter('collector.facet_rows', 5)
+        self.declare_parameter('collector.facet_cols', 5)
+        self.declare_parameter('system_paths.history_csv_output', 'collector_inspection_history.csv')
+        self.declare_parameter('performance.dashboard_refresh_s', 1.5)
+        self.declare_parameter('calibration.heatmap_threshold_mrad', 5.0)
+        self.declare_parameter('calibration.max_coverage', 100)
         
-        self.csv_filename = 'collector_inspection_history.csv'
+        # --- EXTRAER VALORES ---
+        self.rows = self.get_parameter('collector.facet_rows').value
+        self.cols = self.get_parameter('collector.facet_cols').value
+        self.csv_filename = self.get_parameter('system_paths.history_csv_output').value
+        refresh_s = self.get_parameter('performance.dashboard_refresh_s').value
+        self.heatmap_threshold = self.get_parameter('calibration.heatmap_threshold_mrad').value
+        self.max_coverage = self.get_parameter('calibration.max_coverage').value
+        
         file_exists = os.path.isfile(self.csv_filename)
         self.csv_file = open(self.csv_filename, mode='a', newline='')
         self.csv_writer = csv.writer(self.csv_file)
@@ -35,17 +47,16 @@ class CollectorAnalysisLoggerNode(Node):
             self.csv_writer.writerow(['Timestamp', 'Collector_ID', 'Facet_ID', 'Err_X_mrad', 'Err_Y_mrad'])
             
         self.bridge = CvBridge()
-        
-        # Main current state dictionary: { "collector_0": { "visits", "err_x", "err_y" } }
         self.plant_data = {}  
         self.active_collector = None 
         
         self.create_subscription(String, '/calibration/results', self.results_callback, 10)
         self.pub_dashboard = self.create_publisher(Image, '/calibration/heatmap_image', 10)
         
-        self.timer_dashboard = self.create_timer(1.5, self.publish_dashboard)
-        self.get_logger().info("Real-time Logger started. 5x5 Dashboard refreshing...")
-
+        # --- TIMER CON PARÁMETRO ---
+        self.timer_dashboard = self.create_timer(refresh_s, self.publish_dashboard)
+        self.get_logger().info(f"Real-time Logger started. {self.cols}x{self.rows} Dashboard refreshing...")
+        
     def extract_facet_indices(self, facet_id):
         try:
             parts = facet_id.split('_f')
@@ -86,7 +97,7 @@ class CollectorAnalysisLoggerNode(Node):
             
             self.plant_data[parent_id]['err_x'][f, c] = err_x
             self.plant_data[parent_id]['err_y'][f, c] = err_y
-            self.plant_data[parent_id]['visits'][f, c] = 1 # Mark as active
+            self.plant_data[parent_id]['visits'][f, c] = min(self.plant_data[parent_id]['visits'][f, c] + 1, self.max_coverage)
             
             self.csv_writer.writerow([timestamp, parent_id, full_id, err_x, err_y])
         self.csv_file.flush()
@@ -111,7 +122,8 @@ class CollectorAnalysisLoggerNode(Node):
 
         # 1. Coverage
         ax1.set_title("Coverage (Inspected)", pad=15)
-        ax1.imshow(data['visits'], cmap='Greens', origin='upper', vmin=0, vmax=1)
+        im1 = ax1.imshow(data['visits'], cmap='Greens', origin='upper', vmin=0, vmax=self.max_coverage)
+        fig.colorbar(im1, ax=ax1, label='results processed')
 
         # 2. Vector Map
         ax2.set_title("Normal Deviation (Canting Error)", pad=15)
@@ -127,7 +139,7 @@ class CollectorAnalysisLoggerNode(Node):
         if np.max(mag) > 0.01:
             # 1. DEFINE THRESHOLD (in mrad)
             # Any error below this will be drawn very small.
-            fixed_threshold_mrad = 5.0
+            fixed_threshold_mrad = self.heatmap_threshold
             
             # 2. HYBRID LOGIC
             # If max_mag is 0.5, reference_value will be 5.0 (Fixed Scale)

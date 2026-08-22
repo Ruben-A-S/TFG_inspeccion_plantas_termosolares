@@ -25,12 +25,6 @@ except ImportError:
     def remove_collectors(m, p): pass
 
 # ==========================================
-# GLOBAL CONFIGURATION
-# ==========================================
-# Change this to False to use the original simple collectors
-ADVANCED_MODE = True 
-
-# ==========================================
 # MATHEMATICAL FUNCTIONS
 # ==========================================
 
@@ -66,6 +60,41 @@ class MapLoaderNode(Node):
     """
     def __init__(self):
         super().__init__('map_loader_node')
+        
+        # --- 1. DECLARAR PARÁMETROS DEL YAML ---
+        self.declare_parameter('ui_defaults.world_name', 'test1')
+        self.declare_parameter('ui_defaults.collector_model', 'collector')
+        self.declare_parameter('ui_defaults.date', '10/02/2001')
+        self.declare_parameter('ui_defaults.time', '12:34')
+        
+        self.declare_parameter('collector.advanced_mode', True)
+        self.declare_parameter('collector.pedestal_z_offset', 5.0)
+        self.declare_parameter('collector.facet_rows', 5)
+        self.declare_parameter('collector.facet_cols', 5)
+        
+        self.declare_parameter('environment.sun_vector', [1000.0, 100.0, 500.0])
+        self.declare_parameter('performance.tf_broadcast_hz', 20.0)
+        
+        self.declare_parameter('system_paths.base_dir', '~/Carpeta_TFG_Provisional/src/TFG_inspeccion_plantas_termosolares')
+        self.declare_parameter('environment.gazebo_timeout_ms', 3000)
+
+        # --- 2. EXTRAER VALORES ---
+        self.current_world = self.get_parameter('ui_defaults.world_name').value
+        self.current_model = self.get_parameter('ui_defaults.collector_model').value
+        self.def_date = self.get_parameter('ui_defaults.date').value
+        self.def_time = self.get_parameter('ui_defaults.time').value
+        
+        self.advanced_mode = self.get_parameter('collector.advanced_mode').value
+        self.z_offset = self.get_parameter('collector.pedestal_z_offset').value
+        self.f_rows = self.get_parameter('collector.facet_rows').value
+        self.f_cols = self.get_parameter('collector.facet_cols').value
+        
+        self.sun_vector = self.get_parameter('environment.sun_vector').value
+        tf_hz = self.get_parameter('performance.tf_broadcast_hz').value
+        
+        self.base_dir = os.path.expanduser(self.get_parameter('system_paths.base_dir').value)
+        self.gz_timeout = self.get_parameter('environment.gazebo_timeout_ms').value
+        
         self.tf_buffer = Buffer()
         self.tf_listener = TransformListener(self.tf_buffer, self)
 
@@ -73,9 +102,6 @@ class MapLoaderNode(Node):
 
         self.theoretical_collectors = []   
         self.real_collectors = [] 
-        
-        self.current_world = "test1"
-        self.current_model = "collector"
 
         # --- SUBSCRIBERS ---
         self.create_subscription(String, '/sim_cmd/map_management', self.map_management_callback, 10)
@@ -89,11 +115,12 @@ class MapLoaderNode(Node):
         self.srv_theory = self.create_service(Trigger, 'get_collector_theory', self.get_collector_theory_callback)
         self.srv_real = self.create_service(Trigger, 'get_collector_real', self.get_collector_real_callback)
         
-        # Timer to publish TF at 20Hz (to see in RViz)
-        self.create_timer(0.05, self.broadcast_tf_tree)
+        # Timer to publish TF (to see in RViz)
+        timer_period = 1.0 / tf_hz if tf_hz > 0 else 0.05
+        self.create_timer(timer_period, self.broadcast_tf_tree)
         self.get_logger().info("Map Loader initialized with TF2 support.")
 
-        mode_str = "ADVANCED (Facets)" if ADVANCED_MODE else "SIMPLE (Block)"
+        mode_str = "ADVANCED (Facets)" if self.advanced_mode else "SIMPLE (Block)"
         self.send_log(f"Map Loader READY in {mode_str} MODE. Waiting for commands.")
 
     def broadcast_tf_tree(self):
@@ -168,7 +195,7 @@ class MapLoaderNode(Node):
         flat_entities = []
         
         for collector in collector_list:
-            if not ADVANCED_MODE:
+            if not self.advanced_mode:
                 flat_entities.append(collector)
                 continue
 
@@ -232,7 +259,7 @@ class MapLoaderNode(Node):
             # =========================================================
             # SINGLE FACET MODE
             # =========================================================
-            if ADVANCED_MODE and facet_id != "all":
+            if self.advanced_mode and facet_id != "all":
                 # 1. We look for the specific facet in memory before changing it
                 old_facet = next((f for f in real_collector.get('facets', []) if f['id'] == facet_id), None)
                 if not old_facet:
@@ -254,7 +281,7 @@ class MapLoaderNode(Node):
 
                 # 4. We calculate the new position of ONLY that facet and inject it
                 single_new_entity = self.get_gazebo_entities([temp_collector])
-                inject_collectors(self.current_world, single_new_entity, "facet")
+                inject_collectors(self.current_world, single_new_entity, "facet", self.base_dir, self.gz_timeout)
 
                 self.send_log(f"SURGICAL [OK]: Only facet {facet_id} was replaced.")
 
@@ -272,8 +299,8 @@ class MapLoaderNode(Node):
 
                 # We reinject the fully updated collector
                 new_entities = self.get_gazebo_entities([real_collector])
-                model_to_inject = "facet" if ADVANCED_MODE else self.current_model
-                inject_collectors(self.current_world, new_entities, model_to_inject)
+                model_to_inject = "facet" if self.advanced_mode else self.current_model
+                inject_collectors(self.current_world, new_entities, model_to_inject, self.base_dir, self.gz_timeout)
                 
                 self.send_log(f"GLOBAL ROTATION [OK]: {target_id} completely reorganized.")
             
@@ -292,19 +319,19 @@ class MapLoaderNode(Node):
                 
                 self.theoretical_collectors = self.generate_array_from_csv(
                     data.get("csv"), 
-                    data.get("date", "10/02/2001"), 
-                    data.get("time", "12:00")
+                    data.get("date", self.def_date), 
+                    data.get("time", self.def_time)
                 )
                 self.real_collectors = json.loads(json.dumps(self.theoretical_collectors))
                 
                 # We translate to flat objects and send to Gazebo
                 entities = self.get_gazebo_entities(self.real_collectors)
-                model_to_inject = "facet" if ADVANCED_MODE else self.current_model
-                inject_collectors(self.current_world, entities, model_to_inject)
+                model_to_inject = "facet" if self.advanced_mode else self.current_model
+                inject_collectors(self.current_world, entities, model_to_inject, self.base_dir, self.gz_timeout)
                 
                 notification_ids = [c['id'] for c in self.real_collectors]
                 self.pub_updates.publish(String(data=json.dumps(notification_ids)))
-                self.send_log(f"MAP LOADED: {len(self.theoretical_collectors)} collectors (Advanced: {ADVANCED_MODE}).")
+                self.send_log(f"MAP LOADED: {len(self.theoretical_collectors)} collectors (Advanced: {self.advanced_mode}).")
 
             elif data.get("action") == "EMPTY":
                 entities = self.get_gazebo_entities(self.real_collectors)
@@ -330,7 +357,9 @@ class MapLoaderNode(Node):
                 for row in reader:
                     if len(collector_list) >= 5: break 
                     
-                    x, y, z = float(row["Heliostat x"]), float(row["Heliostat y"]), float(row["Heliostat z"])
+                    x, y = float(row["Heliostat x"]), float(row["Heliostat y"])
+                    z = float(row["Heliostat z"]) + self.z_offset
+                    
                     ax, ay, az = float(row["Aiming point x"]), float(row["Aiming point y"]), float(row["Aiming point z"])
                     
                     yaw, pitch = calculate_heliostat_orientation([x,y,z], [ax,ay,az], get_invented_sun(date, time_str))
@@ -342,28 +371,31 @@ class MapLoaderNode(Node):
                     # Base dictionary of the collector
                     collector_data = {
                         "id": collector_id, 
-                        "x": x, "y": y, "z": z + 5,
+                        "x": x, "y": y, "z": z,
                         "yaw": yaw, "pitch": pitch,
                         "width_x": width_x,
                         "length_y": length_y
                     }
 
                     # --- MODE 2: GENERATION OF 5x5 FACETS ---
-                    if ADVANCED_MODE:
+                    if self.advanced_mode:
                         facets = []
-                        w_facet = width_x / 5.0
-                        l_facet = length_y / 5.0
+                        w_facet = width_x / float(self.f_cols)
+                        l_facet = length_y / float(self.f_rows)
                         
-                        # Loop from -2 to +2 to generate a grid centered on the pole
-                        for i in range(-2, 3):
-                            for j in range(-2, 3):
-                                facet_id = f"{collector_id}_f{i+2}_{j+2}"
+                        for i in range(self.f_cols):
+                            for j in range(self.f_rows):
+                                offset_x = (i - (self.f_cols - 1) / 2.0) * w_facet
+                                offset_y = (j - (self.f_rows - 1) / 2.0) * l_facet
+                                
+                                facet_id = f"{collector_id}_f{i}_{j}"
                                 facets.append({
                                     "id": facet_id,
-                                    "offset": [i * w_facet, j * l_facet, 0.0],
+                                    "offset": [offset_x, offset_y, 0.0],
                                     "cant_roll": 0.0,
                                     "cant_pitch": 0.0
                                 })
+                                
                         collector_data["facets"] = facets
                     
                     collector_list.append(collector_data)

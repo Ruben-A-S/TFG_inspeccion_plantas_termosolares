@@ -17,10 +17,22 @@ class CameraFilterNode(Node):
     def __init__(self):
         super().__init__('camera_filter_node')
         
-        # Camera parameters
-        self.focal_dist = 1.5
-        self.sensor_w, self.sensor_h = 1.6, 1.2
-        self.res_w, self.res_h = 640, 480
+        # --- 1. DECLARAR PARÁMETROS DEL YAML ---
+        self.declare_parameter('camera.focal_distance', 1.5)
+        self.declare_parameter('camera.sensor_size', [1.6, 1.2])
+        self.declare_parameter('camera.resolution', [640, 480])
+        self.declare_parameter('camera.near_clip_dist', 0.1)
+
+        # --- 2. EXTRAER VALORES ---
+        self.focal_dist = self.get_parameter('camera.focal_distance').value
+        
+        sensor_dims = self.get_parameter('camera.sensor_size').value
+        self.sensor_w, self.sensor_h = sensor_dims[0], sensor_dims[1]
+        
+        res_dims = self.get_parameter('camera.resolution').value
+        self.res_w, self.res_h = res_dims[0], res_dims[1]
+        
+        self.near_clip = self.get_parameter('camera.near_clip_dist').value
 
         self.cam_pose = None
 
@@ -59,7 +71,7 @@ class CameraFilterNode(Node):
 
         # 3. MASSIVE PROJECTION TO PIXELS
         # Mask 1: Only points that are in front of the lens (X > 0.1)
-        front_mask = cam_points[:, 0] > 0.1
+        front_mask = cam_points[:, 0] > self.near_clip
         
         visible = []
         

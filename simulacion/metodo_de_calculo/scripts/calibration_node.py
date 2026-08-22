@@ -22,6 +22,23 @@ class CalibrationNode(Node):
     def __init__(self):
         super().__init__('calibration_node')
         
+        # --- 1. DECLARAR PARÁMETROS DEL YAML ---
+        self.declare_parameter('camera.led_offset', [0.0, 0.0, -0.6])
+        self.declare_parameter('ui_defaults.camera_pitch_deg', 45.0)
+        self.declare_parameter('calibration.max_samples_average', 50)
+        self.declare_parameter('calibration.newton_iterations', 3)
+        
+        # --- 2. EXTRAER VALORES ---
+        led_offset = self.get_parameter('camera.led_offset').value
+        self.d_cam_led = np.array(led_offset)  # Distancia del LED a la cámara
+        
+        # Convertimos automáticamente los grados del YAML a radianes
+        pitch_deg = self.get_parameter('ui_defaults.camera_pitch_deg').value
+        self.cam_angle = math.radians(pitch_deg)
+        
+        self.max_samples = self.get_parameter('calibration.max_samples_average').value
+        self.newton_iters = self.get_parameter('calibration.newton_iterations').value
+        
         self.theoretical_collectors = {} 
         self.error_history = {} 
 
@@ -38,12 +55,6 @@ class CalibrationNode(Node):
 
         self.focused_collector = None
         self.moving_average_buffer = [] 
-        
-        # Distance from the camera to the LED (in the camera's local system)
-        self.d_cam_led = np.array([0.0, 0.0, -0.6])  
-        
-        # Default initial angle (45 degrees)
-        self.cam_angle = 0.785  
 
         self.request_theoretical_map()
         self.get_logger().info("HelioPoint Brain started [UNIFIED FACET VERSION]. Waiting for theory...")
@@ -166,7 +177,7 @@ class CalibrationNode(Node):
             global_meas_n = np.array([0.0, 0.0, 0.0])
             
             # Newton-Raphson / Cross Product to find the real orientation
-            for _ in range(3):
+            for _ in range(self.newton_iters):
                 global_reflex_p = p_theo + r_iter.apply(p_bounce_local)
                 global_meas_n = self.calculate_measured_vector(p_cam, drone_r, global_reflex_p)
                 global_curr_n = r_iter.apply([0.0, 0.0, 1.0])
@@ -195,15 +206,13 @@ class CalibrationNode(Node):
             rotX_mrad = error_rotX_rad * 1000.0
             rotY_mrad = error_rotY_rad * 1000.0
             
-            MAX_SAMPLES = 50  
-            
             if collector_id not in self.error_history:
                 self.error_history[collector_id] = {"rotX": [], "rotY": []}
                 
             self.error_history[collector_id]["rotX"].append(rotX_mrad)
             self.error_history[collector_id]["rotY"].append(rotY_mrad)
             
-            if len(self.error_history[collector_id]["rotX"]) > MAX_SAMPLES:
+            if len(self.error_history[collector_id]["rotX"]) > self.max_samples:
                 self.error_history[collector_id]["rotX"].pop(0)
                 self.error_history[collector_id]["rotY"].pop(0)
                 

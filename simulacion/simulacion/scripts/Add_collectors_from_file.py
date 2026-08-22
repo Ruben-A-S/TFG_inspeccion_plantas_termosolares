@@ -24,17 +24,14 @@ def euler_to_quaternion(roll, pitch, yaw):
     return qx, qy, qz, qw
 
 
-def inject_collectors(world, collector_array, model):
+def inject_collectors(world, collector_array, model, base_dir, timeout_ms=3000):
     """
     Reads an array of collectors and injects each model into the active Gazebo world.
     
     Uses the terminal command 'gz service' to spawn the model
     with the specified position and orientation (translated to quaternions).
     """
-    # Base path to the SDF file of the collector model
-    base_dir = os.path.expanduser(
-        "~/Carpeta_TFG_Provisional/src/TFG_inspeccion_plantas_termosolares"
-    )
+    
     model_path = os.path.join(
         base_dir, f"simulacion/simulacion/models/{model}.sdf"
     )
@@ -58,7 +55,7 @@ def inject_collectors(world, collector_array, model):
             f"gz service -s /world/{world}/create "
             f"--reqtype gz.msgs.EntityFactory "
             f"--reptype gz.msgs.Boolean "
-            f"--timeout 1000 "
+            f"--timeout {timeout_ms} "
             f"--req 'sdf_filename: \"{model_path}\", name: \"{collector_id}\", "
             f"pose: {{position: {{x: {x}, y: {y}, z: {z}}}, "
             f"orientation: {{x: {qx}, y: {qy}, z: {qz}, w: {qw}}}}}'"

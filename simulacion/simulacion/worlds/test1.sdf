@@ -45,7 +45,7 @@
             <diffuse>0.8 0.8 0.8 1</diffuse>
             <pbr>
               <metal>
-                <albedo_map>/home/ruben/Carpeta_TFG_Provisional/src/TFG_inspeccion_plantas_termosolares/simulacion/simulacion/models/textures/arenosillo.png</albedo_map>
+                <albedo_map>/home/ruben/Carpeta_TFG_Provisional/src/TFG_inspeccion_plantas_termosolares/simulacion/simulacion/models/textures/none</albedo_map>
                 <roughness>0.9</roughness> 
                 <metalness>0.0</metalness> 
               </metal>
@@ -92,9 +92,9 @@
     <spherical_coordinates>
       <surface_model>EARTH_WGS84</surface_model>
       <world_frame_orientation>ENU</world_frame_orientation>
-      <latitude_deg>47.397971057728974</latitude_deg>
-      <longitude_deg> 8.546163739800146</longitude_deg>
-      <elevation>0</elevation>
+      <latitude_deg>38.0945</latitude_deg>
+      <longitude_deg>-3.7749</longitude_deg>
+      <elevation>349.0</elevation>
     </spherical_coordinates>
   </world>
 </sdf>

@@ -18,13 +18,44 @@ class VirtualCameraNode(Node):
     def __init__(self):
         super().__init__('virtual_camera_node')
         
-        self.br = CvBridge()
-        self.res_w, self.res_h = 640, 480
-        self.focal_dist = 1.5
-        self.sensor_w, self.sensor_h = 1.6, 1.2
+        # --- 1. DECLARAR PARÁMETROS DEL YAML ---
+        self.declare_parameter('camera.resolution', [640, 480])
+        self.declare_parameter('camera.sensor_size', [1.6, 1.2])
+        self.declare_parameter('camera.focal_distance', 1.5)
+        self.declare_parameter('camera.render_fov_degrees', 160.0)
+        self.declare_parameter('camera.render_draw_dist', 150.0)
+        self.declare_parameter('camera.near_clip_dist', 0.1)
         
-        self.fov_cosine_limit = np.cos(np.radians(160.0 / 2.0))
-        self.draw_distance = 150.0
+        self.declare_parameter('collector.default_width', 10.4)
+        self.declare_parameter('collector.default_length', 11.4)
+        self.declare_parameter('collector.facet_cols', 5)
+        self.declare_parameter('collector.facet_rows', 5)
+        
+        self.declare_parameter('performance.render_hz', 20.0)
+        
+        # --- 2. EXTRAER VALORES ---
+        res = self.get_parameter('camera.resolution').value
+        self.res_w, self.res_h = res[0], res[1]
+        
+        sensor = self.get_parameter('camera.sensor_size').value
+        self.sensor_w, self.sensor_h = sensor[0], sensor[1]
+        
+        self.focal_dist = self.get_parameter('camera.focal_distance').value
+        
+        render_fov = self.get_parameter('camera.render_fov_degrees').value
+        self.fov_cosine_limit = np.cos(np.radians(render_fov / 2.0))
+        
+        self.draw_distance = self.get_parameter('camera.render_draw_dist').value
+        self.near_clip = self.get_parameter('camera.near_clip_dist').value
+        
+        self.def_w = self.get_parameter('collector.default_width').value
+        self.def_l = self.get_parameter('collector.default_length').value
+        self.f_cols = self.get_parameter('collector.facet_cols').value
+        self.f_rows = self.get_parameter('collector.facet_rows').value
+        
+        render_hz = self.get_parameter('performance.render_hz').value
+        
+        self.br = CvBridge()
         
         self.drone_pose = None
         self.cam_pose = None
@@ -37,12 +68,15 @@ class VirtualCameraNode(Node):
         self.cli_real = self.create_client(Trigger, 'get_collector_real')
 
         self.pub_image = self.create_publisher(Image, '/virtual_camera/image', 10)
+        
         self.create_subscription(String, '/sim_status/collector_updates', self.update_collectors_callback, 10)
         self.create_subscription(PoseStamped, '/data/drone', self.drone_callback, qos_profile_sensor_data)
         self.create_subscription(PoseStamped, '/data/camera', self.camera_callback, qos_profile_sensor_data)
         self.create_subscription(String, '/inspection/raw_data', self.raw_data_callback, qos_profile_sensor_data)
         
-        self.create_timer(0.05, self.render_loop)
+        timer_period = 1.0 / render_hz if render_hz > 0 else 0.05
+        self.create_timer(timer_period, self.render_loop)
+        
         self.request_initial_map()
         self.get_logger().info("Virtual Camera [KD-Tree + Pure RAM] active.")
 
@@ -98,7 +132,9 @@ class VirtualCameraNode(Node):
 
             draw_targets = []
             if 'facets' in c:
-                w_f, l_f = c.get('width_x', 10.4) / 5.0, c.get('length_y', 11.4) / 5.0
+                w_f = c.get('width_x', self.def_w) / float(self.f_cols)
+                l_f = c.get('length_y', self.def_l) / float(self.f_rows)
+                
                 for f in c['facets']:
                     local_offset = np.array(f.get('offset', [0.0, 0.0, 0.0]))
                     global_f_pos = global_c_pos + global_c_r.apply(local_offset)
@@ -108,7 +144,7 @@ class VirtualCameraNode(Node):
                     
                     draw_targets.append({'pos': global_f_pos, 'rot_mat': final_f_r, 'w': w_f, 'l': l_f})
             else:
-                draw_targets.append({'pos': global_c_pos, 'rot_mat': global_c_r, 'w': c.get('width_x', 10.4), 'l': c.get('length_y', 11.4)})
+                draw_targets.append({'pos': global_c_pos, 'rot_mat': global_c_r, 'w': c.get('width_x', self.def_w), 'l': c.get('length_y', self.def_l)})
 
             for obj in draw_targets:
                 hw, hl = obj['w']/2, obj['l']/2
@@ -117,7 +153,7 @@ class VirtualCameraNode(Node):
                 cam_corners = r_cam_inv.apply(world_corners - p_cam)
                 
                 # Vectorized Anti-Flicker Projection
-                if np.all(cam_corners[:, 0] > 0.1):
+                if np.all(cam_corners[:, 0] > self.near_clip):
                     u = (((-self.focal_dist * (cam_corners[:, 1] / cam_corners[:, 0])) / self.sensor_w) + 0.5) * self.res_w
                     v = (((-self.focal_dist * (cam_corners[:, 2] / cam_corners[:, 0])) / self.sensor_h) + 0.5) * self.res_h
                     
@@ -127,7 +163,8 @@ class VirtualCameraNode(Node):
         if self.recent_impacts:
             world_pts = np.array([imp.get('bounce_world_debug', [0,0,0]) for imp in self.recent_impacts])
             cam_pts = r_cam_inv.apply(world_pts - p_cam)
-            front_mask = cam_pts[:, 0] > 0.1
+            front_mask = cam_pts[:, 0] > self.near_clip
+            
             if np.any(front_mask):
                 valid_p = cam_pts[front_mask]
                 u = (((-self.focal_dist * (valid_p[:, 1] / valid_p[:, 0])) / self.sensor_w) + 0.5) * self.res_w
